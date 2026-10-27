@@ -19,6 +19,10 @@ short_description: Scenario-based fraud detection on synthetic claims
 ![Data: 100 % synthetic](https://img.shields.io/badge/data-100%25%20synthetic-success)
 ![Licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey)
 
+**Live demo: <https://demo-fraude.kbc-sarl.com>** (French interface, read-only showcase mode).
+
+![Overview page of the demo](docs/images/overview.png)
+
 A small, complete demo of **health-insurance fraud detection broken into scenarios**. It has five rule-based detectors, explanations a claims handler can read, a French web interface, and an honest evaluation. **Everything is synthetic**: the insurer "Mutuelle Exemple", its members, providers, codes and amounts are invented, and the fraud is injected by the generator.
 
 **Assumptions** (stated instead of asked):
@@ -27,6 +31,17 @@ A small, complete demo of **health-insurance fraud detection broken into scenari
 - **Data.** Codes, prices and the act/diagnosis rules table are invented and simplified. They do not follow any real nomenclature or tariff.
 - **Shared state.** In live mode, the app keeps one dataset in memory: "Regenerate" replaces it for every visitor, and it is rate limited. The Docker image runs in showcase mode, where regeneration is off and every visitor sees the same precomputed demo.
 - **Decision buttons.** They only store the choice in the viewer's browser.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Exploration: amount distribution and fraud signals](docs/images/exploration.png) | ![Alert detail: reason, evidence, decision, price history](docs/images/alert-detail.png) |
+| **Exploration**: the data before any rule, then each scenario's signal | **Alert detail**: why, evidence rows, suggested decision |
+| ![Evaluation: precision-recall per threshold](docs/images/evaluation.png) | ![Providers: alerts per week and billing profile](docs/images/providers.png) |
+| **Evaluation**: precision-recall per threshold, confusion matrices, gain curve | **Providers**: heat maps and member-provider graph |
+| ![Unsupervised model compared with the rules](docs/images/model.png) | |
+| **Unsupervised model**: Isolation Forest compared with the rules at the same workload | |
 
 ## The problem
 
@@ -226,15 +241,16 @@ The **Modèle non supervisé** page trains an Isolation Forest (scikit-learn, 20
 
 The jump from 31 % to 61 % comes from the features, not the algorithm. The model also finds 8 fraudulent lines that no rule flags. That makes it a useful discovery tool for new scenarios, but not a replacement: it gives a score, not a reason a claims handler can act on. It is trained on the whole year at once; a real deployment would train on the past and score the present.
 
-## Roadmap
+## What I would do next
 
-The project is being extended in stages, each one tested before the next:
+Each point follows from something the demo measured:
 
-1. ~~Clean repository with CI~~ (done)
-2. ~~"Exploration des données" view: distributions, seasonality, concentration and fraud-versus-legitimate charts~~ (done)
-3. ~~Deeper evaluation: precision-recall curves per threshold, confusion matrices, gain curve for the handler's queue~~ (done)
-4. ~~Provider heatmaps, a member–provider network graph, and an unsupervised model shown *only as a comparison* with the rules~~ (done)
-5. ~~Self-hosted deployment behind Nginx, isolated from other services on the same server, in showcase mode~~ (done)
+1. **Choose thresholds on one period and check them on the next.** The precision-recall sweep suggests ×1.8 rather than ×2 for prices, but picking it on the same data would be overfitting. A time split (for example, tune on January to September and validate on October to December) is the honest way to move it.
+2. **Sort the queue by expected recovered amount, not by severity alone.** Severity ranks reliability well (92 % of high alerts are right), but sorting by amount recovers 75 % of the fraudulent euros in 365 alerts, against 58 %. A priority of reliability × amount would combine both.
+3. **Turn the provider profile into a rule.** Aggregated per provider, the six providers that inflate prices come out first. A provider-level rule would catch them earlier than a series of line-level alerts.
+4. **Learn from handler decisions.** Each confirmed or dismissed alert is a label. It can recalibrate severities and thresholds, watching for the feedback loop (only alerted lines ever get labels).
+5. **Use the unsupervised model to discover, not to decide.** It finds frauds no rule sees. A monthly review of its most anomalous lines outside the alerts is a cheap source of new scenarios, each turned into an explainable rule.
+6. **Look for organised groups on real data.** The member-provider graph is ready for community detection. The synthetic data has no organised ring, so this demo cannot show it.
 
 ## Limits (please read)
 
@@ -249,7 +265,7 @@ The **Évaluation** page repeats these weaknesses rule by rule in a box titled "
 
 ## Résumé en français
 
-Démo de **détection de fraude santé par scénarios** pour un assureur fictif, « Mutuelle Exemple ». Les données sont **entièrement synthétiques**. Un générateur déterministe produit environ 20 000 lignes de soins et y injecte cinq scénarios :
+Démo de **détection de fraude santé par scénarios** pour un assureur fictif, « Mutuelle Exemple ». Démo en ligne : <https://demo-fraude.kbc-sarl.com>. Les données sont **entièrement synthétiques**. Un générateur déterministe produit environ 20 000 lignes de soins et y injecte cinq scénarios :
 1. prix gonflé ;
 2. doublon ou facture fractionnée ;
 3. multiplication des prestataires ;
@@ -266,6 +282,8 @@ L'interface en français propose sept vues :
 - la file d'alertes ;
 - le détail d'une alerte ;
 - une évaluation honnête : rappel, précision, fausses alertes par jour, courbes précision-rappel selon le seuil, matrices de confusion, courbe de gain de la file d'alertes, effet du bruit, et un encadré « Ce qui ne marche pas ».
+
+**Suite envisagée :** choisir les seuils sur une période et les valider sur la suivante ; trier la file selon le montant attendu et la fiabilité de l'alerte ; transformer le profil de facturation des prestataires en règle ; apprendre des décisions des gestionnaires ; utiliser le modèle non supervisé pour découvrir de nouveaux scénarios.
 
 **Limite principale :** les fraudes ont été injectées par l'auteur. Les scores mesurent donc la capacité à retrouver ces motifs, pas la performance sur de vraies fraudes.
 

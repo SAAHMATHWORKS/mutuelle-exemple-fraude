@@ -273,8 +273,8 @@
           <div class="table-scroll"><table class="responsive">
             <thead><tr><th>Prestataire</th><th>Scénarios</th><th class="num">Alertes</th><th class="num">Montant</th></tr></thead>
             <tbody>${o.top_providers.map((p) => `<tr class="clickable" data-q="${esc(p.provider_id)}">
-              <td data-label="Prestataire"><a class="mono" href="#/alertes?q=${encodeURIComponent(p.provider_id)}">${esc(p.provider_id)}</a> <span class="muted">${esc(p.type)}</span></td>
-              <td data-label="Scénarios">${p.scenarios.map((s) => `<span class="swatch s${s}" title="${esc(o.scenarios[s])}" aria-label="${esc(o.scenarios[s])}"></span>`).join(" ")}</td>
+              <td data-label="Prestataire"><span class="cv"><a class="mono" href="#/alertes?q=${encodeURIComponent(p.provider_id)}">${esc(p.provider_id)}</a> <span class="muted">${esc(p.type)}</span></span></td>
+              <td data-label="Scénarios"><span class="cv">${p.scenarios.map((s) => `<span class="swatch s${s}" title="${esc(o.scenarios[s])}" aria-label="${esc(o.scenarios[s])}"></span>`).join(" ")}</span></td>
               <td data-label="Alertes" class="num">${nf.format(p.alerts)}</td><td data-label="Montant" class="num">${eur0.format(p.amount)}</td></tr>`).join("")}</tbody>
           </table></div>
           <p style="margin:10px 0 0"><a href="#/prestataires">Profil de facturation et graphe adhérents–prestataires →</a></p>
@@ -562,9 +562,9 @@
           <tbody>${a.evidence.map((r) => `<tr>
             <td data-label="Date">${dateLong(r.date)}</td>
             <td data-label="Rôle"><span class="role ${r.role === "signalée" ? "flag" : ""}">${r.role === "signalée" ? "Signalée" : "Contexte"}</span></td>
-            <td data-label="Acte">${esc(r.act_label)} <span class="muted mono">${esc(r.act_code)}</span></td>
-            <td data-label="Diagnostic">${esc(r.diagnosis_label)} <span class="muted mono">${esc(r.diagnosis_code)}</span></td>
-            <td data-label="Prestataire"><span class="mono">${esc(r.provider_id)}</span> <span class="muted">${esc(r.provider_type)}</span></td>
+            <td data-label="Acte"><span class="cv">${esc(r.act_label)} <span class="muted mono">${esc(r.act_code)}</span></span></td>
+            <td data-label="Diagnostic"><span class="cv">${esc(r.diagnosis_label)} <span class="muted mono">${esc(r.diagnosis_code)}</span></span></td>
+            <td data-label="Prestataire"><span class="cv"><span class="mono">${esc(r.provider_id)}</span> <span class="muted">${esc(r.provider_type)}</span></span></td>
             <td data-label="Montant" class="num">${eur.format(r.billed_amount)}</td></tr>`).join("")}</tbody></table></div>
         <details class="truth">
           <summary>Coulisses de la démo : que s'est-il vraiment passé ?</summary>
