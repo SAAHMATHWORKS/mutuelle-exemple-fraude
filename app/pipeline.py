@@ -24,6 +24,7 @@ class Result:
     detect_in_s: float
     claims_by_line: pd.DataFrame = field(repr=False, default=None)
     exploration: dict | None = field(repr=False, default=None)
+    advanced: dict | None = field(repr=False, default=None)  # filled in the background by app.state
 
     def get_exploration(self) -> dict:
         """Exploratory aggregates, computed on first use and kept with this result."""

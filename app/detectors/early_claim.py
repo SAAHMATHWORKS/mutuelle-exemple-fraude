@@ -17,10 +17,10 @@ HIGH_DAYS = 7
 MIN_AMOUNT = 150.0
 
 
-def detect(claims: pd.DataFrame) -> list[Alert]:
+def detect(claims: pd.DataFrame, max_days: int = MAX_DAYS) -> list[Alert]:
     since = claims["day"] - claims["policy_start_day"]
     costly = claims["act_code"].isin(COSTLY_ACTS) | (claims["billed_amount"] >= MIN_AMOUNT)
-    hits = claims[(since >= 0) & (since <= MAX_DAYS) & costly].assign(since=since)
+    hits = claims[(since >= 0) & (since <= max_days) & costly].assign(since=since)
     by_member = claims.groupby("member_id").indices
     alerts: list[Alert] = []
     for row in hits.itertuples(index=False):
@@ -31,7 +31,7 @@ def detect(claims: pd.DataFrame) -> list[Alert]:
             Alert(
                 scenario=5,
                 severity="haute" if row.since <= HIGH_DAYS else ("moyenne" if row.since <= 15 else "faible"),
-                score=float(MAX_DAYS - row.since) + float(row.billed_amount) / 100,
+                score=float(max_days - row.since) + float(row.billed_amount) / 100,
                 alert_day=int(row.day),
                 member_id=row.member_id,
                 provider_id=row.provider_id,

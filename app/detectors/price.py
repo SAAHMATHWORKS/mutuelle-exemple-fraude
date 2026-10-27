@@ -57,9 +57,9 @@ def reference_prices(claims: pd.DataFrame, min_history: int = MIN_HISTORY) -> pd
     return pd.DataFrame({"ref_median": ref, "n_prior": n_prior}, index=claims.index)
 
 
-def detect(claims: pd.DataFrame, refs: pd.DataFrame) -> list[Alert]:
+def detect(claims: pd.DataFrame, refs: pd.DataFrame, ratio_flag: float = RATIO_FLAG) -> list[Alert]:
     ratio = claims["billed_amount"] / refs["ref_median"]
-    hits = claims[ratio >= RATIO_FLAG].assign(ratio=ratio, ref=refs["ref_median"], n_prior=refs["n_prior"])
+    hits = claims[ratio >= ratio_flag].assign(ratio=ratio, ref=refs["ref_median"], n_prior=refs["n_prior"])
     alerts: list[Alert] = []
     provider_alert_days: dict[str, list[int]] = {}
     for row in hits.sort_values(["day", "line_id"]).itertuples(index=False):

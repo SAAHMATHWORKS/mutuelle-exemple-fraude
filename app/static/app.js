@@ -24,6 +24,7 @@
   const view = document.getElementById("view");
   let charts = [];
   let pollTimer = null;
+  let advTimer = null;
   let lastQueueHash = "#/alertes";
   let meta = null; // scenarios + decisions labels, loaded once
 
@@ -89,6 +90,7 @@
     charts.forEach((c) => c.destroy());
     charts = [];
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    if (advTimer) { clearTimeout(advTimer); advTimer = null; }
   }
 
   // -------------------------------------------------------------------- api
@@ -551,7 +553,10 @@
       ctx.restore();
     },
   };
-  let refLineRegistered = false;
+  let pluginsRegistered = false;
+  function registerPlugins() {
+    if (window.Chart && !pluginsRegistered) { Chart.register(refLinePlugin, pointLabelPlugin); pluginsRegistered = true; }
+  }
 
   function dataTable(headers, rows, caption = "") {
     return `<details class="data-table"><summary>Voir les données en tableau</summary><div class="table-scroll"><table>
@@ -614,7 +619,7 @@
   );
 
   async function renderExploration() {
-    if (window.Chart && !refLineRegistered) { Chart.register(refLinePlugin); refLineRegistered = true; }
+    registerPlugins();
     const x = await api("/api/exploration");
     const S = x.summary;
     const P = x.portfolio;
@@ -975,6 +980,10 @@
     view.innerHTML = `
       <div class="page-head"><div><h1>Évaluation</h1>
         <p>Les fraudes ont été injectées par le générateur : on connaît donc la vérité pour chaque ligne. Ces chiffres mesurent la capacité des règles à retrouver ces motifs injectés, pas leur performance sur de vraies fraudes.</p></div></div>
+      <nav aria-label="Sections de la page"><ul class="toc">
+        ${[["eval-synthese", "Synthèse"], ["eval-seuils", "Seuils et compromis"], ["eval-matrices", "Matrices de confusion"], ["eval-gain", "Courbe de gain"], ["eval-bruit", "Robustesse au bruit"], ["eval-limites", "Ce qui ne marche pas"]]
+          .map(([id, l]) => `<li><a href="#/evaluation" data-jump="${id}">${l}</a></li>`).join("")}
+      </ul></nav>
       <section class="grid kpis" aria-label="Chiffres clés de l'évaluation">
         <div class="kpi"><div class="label">Rappel global</div><div class="value">${pct(o.recall_any)}</div><div class="hint">des ${nf.format(o.fraud_lines)} lignes frauduleuses sont signalées</div></div>
         <div class="kpi"><div class="label">Précision globale</div><div class="value">${pct(o.precision_any)}</div><div class="hint">des lignes signalées sont frauduleuses</div></div>
@@ -982,7 +991,7 @@
         <div class="kpi"><div class="label">Fausses alertes par jour</div><div class="value">${nf1.format(o.false_alerts_per_day)}</div><div class="hint">alertes sans aucune ligne frauduleuse</div></div>
         <div class="kpi"><div class="label">Montant frauduleux retrouvé</div><div class="value">${pct(o.caught_amount / Math.max(o.fraud_amount, 1))}</div><div class="hint">${eur0.format(o.caught_amount)} sur ${eur0.format(o.fraud_amount)}</div></div>
       </section>
-      <section class="card" aria-labelledby="t-per">
+      <section class="card" id="eval-synthese" aria-labelledby="t-per">
         <h2 id="t-per">Par scénario</h2>
         <p class="sub">Rappel : part des lignes injectées pour ce scénario que la règle signale. Précision : part des lignes signalées par la règle qui relèvent bien de ce scénario. Jeu actuel : bruit ${nf.format(e.dataset.noise_level)}.</p>
         <div class="table-scroll"><table class="responsive">
@@ -996,7 +1005,8 @@
             <td data-label="Alertes / jour" class="num">${nf1.format(s.alerts_per_day)}</td>
             <td data-label="Fausses alertes / jour" class="num">${nf1.format(s.false_alerts_per_day)}</td></tr>`).join("")}</tbody></table></div>
       </section>
-      <div class="grid two-col section">
+      <div id="adv" class="section"><section class="card"><p class="loading">Chargement de l'évaluation détaillée…</p></section></div>
+      <div class="grid two-col section" id="eval-bruit">
         <section class="card" aria-labelledby="t-noise">
           <h2 id="t-noise">Robustesse au bruit</h2>
           <p class="sub">Même graine, cinq niveaux de bruit : données légitimes plus irrégulières et fraudes plus discrètes. ${curve.status === "ready" ? `Calculé sur ${nf.format(curve.size)} lignes par niveau.` : ""}</p>
@@ -1015,7 +1025,7 @@
         ${legendHtml([{ cls: "s1", label: "Alertes justes" }, { cls: "s2", label: "Fausses alertes" }])}
         <div class="chart-wrap short"><canvas id="c-fa" role="img" aria-label="Histogramme empilé des alertes justes et fausses par semaine"></canvas></div>
       </section>
-      <section class="callout section" aria-labelledby="t-ko">
+      <section class="callout section" id="eval-limites" aria-labelledby="t-ko">
         <h2 id="t-ko">Ce qui ne marche pas</h2>
         <ul>
           <li><strong>Prix gonflé.</strong> Le seuil « 2 fois le prix habituel » laisse passer les surfacturations modestes (+30 à +80 %) et signale les soins complexes légitimement plus chers. Le prix habituel est une médiane globale par acte : il ignore les écarts normaux entre régions ou cabinets. En janvier, les actes rares n'ont pas encore 20 factures antérieures : aucune référence, donc aucune alerte.</li>
@@ -1023,7 +1033,9 @@
           <li><strong>Multiplication des prestataires.</strong> « Nouveau prestataire » se juge sur l'historique disponible : en début d'année, tout le monde paraît nouveau. Un fraudeur qui étale ses visites sur plus de 14 jours, ou qui se limite à deux médecins, n'est pas vu.</li>
           <li><strong>Incohérence diagnostic / acte.</strong> La règle dépend de la qualité du codage : une erreur de saisie honnête déclenche une alerte, et un fraudeur qui choisit un diagnostic plausible passe.</li>
           <li><strong>Sinistre précoce.</strong> La règle ne distingue pas la fraude de l'anti-sélection légitime (adhérer parce qu'on a besoin de soins). Attendre 31 jours suffit pour passer sous le seuil.</li>
-          <li><strong>En général.</strong> Les cinq règles sont indépendantes : pas de score combiné, pas d'analyse des liens entre adhérents et prestataires, pas d'apprentissage à partir des décisions des gestionnaires. Les seuils ont été choisis à la main sur ces données synthétiques.</li>
+          <li><strong>Seuils.</strong> Ils ont été choisis à la main sur ces mêmes données. La courbe précision-rappel suggère par exemple ×1,8 plutôt que ×2 pour le prix, mais adopter ce seuil ici serait du surapprentissage : il faudrait le choisir sur une période et le valider sur la suivante.</li>
+          <li><strong>Ordre de la file.</strong> La sévérité trie bien la justesse des alertes, mais pas les montants : trier par sévérité fait traiter d'abord des alertes justes mais peu coûteuses (voir la courbe de gain).</li>
+          <li><strong>En général.</strong> Les cinq règles sont indépendantes : pas de score combiné, pas d'analyse des liens entre adhérents et prestataires, pas d'apprentissage à partir des décisions des gestionnaires.</li>
         </ul>
       </section>`;
 
@@ -1048,9 +1060,275 @@
       },
     });
 
+    view.querySelectorAll("[data-jump]").forEach((a) => a.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      const target = document.getElementById(a.dataset.jump);
+      if (target) { target.scrollIntoView({ behavior: "smooth", block: "start" }); target.setAttribute("tabindex", "-1"); target.focus({ preventScroll: true }); }
+    }));
+    loadAdvanced();
     if (curve.status === "ready") renderNoise(curve, e.dataset);
     else if (curve.status === "computing") pollTimer = setTimeout(() => { if (parseHash().parts[0] === "evaluation") route(); }, 2500);
     else document.getElementById("noise-body").innerHTML = `<p class="error">Le calcul de la courbe a échoué.</p>`;
+  }
+
+  // ----------------------------------------------------- advanced evaluation
+  const pointLabelPlugin = {
+    id: "pointLabels",
+    afterDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.items || !opts.items.length) return;
+      const { ctx, chartArea } = chart;
+      ctx.save();
+      ctx.font = `600 11px ${css("--font")}`;
+      ctx.textBaseline = "middle";
+      for (const it of opts.items) {
+        const el = chart.getDatasetMeta(it.dataset ?? 0).data[it.index];
+        if (!el) continue;
+        const { x, y } = el.getProps(["x", "y"], true);
+        const tw = ctx.measureText(it.text).width;
+        let tx = x + 9;
+        if (tx + tw > chartArea.right) tx = x - 9 - tw;
+        let ty = y + (it.below ? 13 : -13);
+        ty = Math.min(Math.max(ty, chartArea.top + 8), chartArea.bottom - 8);
+        ctx.fillStyle = css("--surface");
+        ctx.fillRect(tx - 2, ty - 8, tw + 4, 16);
+        ctx.fillStyle = css(it.muted ? "--text-2" : "--text");
+        ctx.fillText(it.text, tx, ty);
+      }
+      ctx.restore();
+    },
+  };
+
+  const fmtThreshold = (sw, v) => (sw.unit === "×" ? `×${nf.format(v)}` : sw.unit === "€" ? eur0.format(v) : sw.unit === "j" ? `${nf.format(v)} j` : nf.format(v));
+
+  async function loadAdvanced() {
+    const box = document.getElementById("adv");
+    if (!box) return;
+    let adv;
+    try { adv = await api("/api/evaluation/advanced"); } catch (e) {
+      box.innerHTML = `<section class="card"><p class="error">${esc(e.message)}</p></section>`;
+      return;
+    }
+    if (!document.getElementById("adv")) return; // user left the page
+    if (adv.status === "computing") {
+      box.innerHTML = `<section class="card"><p class="loading">Calcul des courbes par seuil en cours (chaque règle est relancée avec plusieurs seuils)… la section s'affichera seule.</p></section>`;
+      advTimer = setTimeout(loadAdvanced, 2000);
+      return;
+    }
+    if (adv.status !== "ready") {
+      box.innerHTML = `<section class="card"><p class="error">Le calcul de l'évaluation détaillée a échoué.</p></section>`;
+      return;
+    }
+    renderAdvanced(adv);
+  }
+
+  function interpAt(points, k) {
+    let prev = points[0];
+    for (const p of points) {
+      if (p.k === k) return p.y;
+      if (p.k > k) return prev.y + ((p.y - prev.y) * (k - prev.k)) / Math.max(p.k - prev.k, 1);
+      prev = p;
+    }
+    return prev.y;
+  }
+
+  function renderAdvanced(adv) {
+    registerPlugins();
+    const box = document.getElementById("adv");
+    const sweeps = adv.sweeps;
+    const cm = adv.confusion;
+    const gain = adv.gain;
+    const sevLabel = { haute: "Haute", moyenne: "Moyenne", faible: "Faible" };
+    const ruleCols = cm.per_rule.map((r) => r.scenario);
+    const cellStyle = (share) => {
+      const pctv = Math.round(Math.min(1, share) * 85);
+      return `background:color-mix(in srgb, var(--accent) ${pctv}%, var(--surface));color:${share > 0.5 ? "var(--accent-ink)" : "var(--text)"}`;
+    };
+    const heatRows = cm.matrix.map((r) => {
+      const cells = ruleCols.map((s) => {
+        const n = r.by_rule[String(s)];
+        const share = r.lines ? n / r.lines : 0;
+        const diag = r.true_scenario === s;
+        return `<td class="cell" style="${cellStyle(share)}${diag ? ";box-shadow:inset 0 0 0 2px var(--text)" : ""}">${nf.format(n)}<span>${pct1(share)}</span></td>`;
+      }).join("");
+      const noneShare = r.lines ? r.none / r.lines : 0;
+      return `<tr><th scope="row" class="rowh">${r.true_scenario ? scenarioHtml(r.true_scenario, r.label) : esc(r.label)}</th><td class="num">${nf.format(r.lines)}</td>${cells}
+        <td class="cell" style="${cellStyle(r.true_scenario === 0 ? 0 : noneShare)}">${nf.format(r.none)}<span>${pct1(noneShare)}</span></td></tr>`;
+    }).join("");
+
+    const capSteps = [0.25, 0.5, 1, 1.5, 2, 2.5];
+    const strategies = [
+      { key: "oracle", label: "Ordre idéal (borne haute)", cls: "ref-dash" },
+      { key: "amount", label: "Montant décroissant", cls: "alt" },
+      { key: "severity_amount", label: "Sévérité, puis montant", cls: "acc" },
+      { key: "chronological", label: "Ordre d'arrivée", cls: "past" },
+    ];
+
+    box.innerHTML = `
+      <section class="card" id="eval-seuils" aria-labelledby="t-pr">
+        <h2 id="t-pr">Compromis précision-rappel selon le seuil</h2>
+        <p class="sub">Chaque règle est relancée avec d'autres valeurs de son seuil principal. Chaque point est un seuil : à droite, on retrouve plus de fraudes ; en haut, les lignes signalées sont plus souvent frauduleuses. Le point cerclé est le seuil actuel.</p>
+        <div class="panel-grid">${sweeps.map((sw) => {
+          const cur = sw.points.find((p) => p.is_current);
+          const best = sw.points.find((p) => p.threshold === sw.best_f1_threshold);
+          return `<div class="panel">
+            <h4>${scenarioHtml(sw.scenario, `${sw.scenario}. ${sw.label}`)}</h4>
+            <p class="sub">${esc(sw.param_label)}. Actuel ${esc(fmtThreshold(sw, sw.current))} : précision ${pct(cur.precision)}, rappel ${pct(cur.recall)}, ${nf1.format(cur.alerts_per_day)} alerte/jour.
+            ${best.threshold !== sw.current ? `Meilleur F1 à ${esc(fmtThreshold(sw, best.threshold))} (précision ${pct(best.precision)}, rappel ${pct(best.recall)}).` : "C'est aussi le meilleur F1 testé."}</p>
+            <div class="chart-wrap" style="height:220px"><canvas id="c-pr-${sw.scenario}" role="img" aria-label="Courbe précision-rappel selon le seuil, scénario ${sw.scenario}"></canvas></div>
+          </div>`;
+        }).join("")}</div>
+        ${dataTable(["Scénario", "Seuil", "Précision", "Rappel", "F1", "Alertes / jour", "Fausses alertes / jour"],
+          sweeps.flatMap((sw) => sw.points.map((p) => [`${sw.scenario}. ${sw.label}${p.is_current ? " (actuel)" : ""}`, fmtThreshold(sw, p.threshold), pct1(p.precision), pct1(p.recall), pct1(p.f1), nf1.format(p.alerts_per_day), nf1.format(p.false_alerts_per_day)])))}
+      </section>
+
+      <section class="card section" id="eval-matrices" aria-labelledby="t-cm">
+        <h2 id="t-cm">Quelle règle attrape quelle fraude ?</h2>
+        <p class="sub">Lignes de chaque scénario injecté (en ligne) signalées par chaque règle (en colonne). Une ligne peut être signalée par plusieurs règles. Pourcentage de la ligne du tableau ; la diagonale encadrée est la règle prévue pour ce scénario.</p>
+        <div class="table-scroll"><table class="heat">
+          <thead><tr><th>Vérité injectée</th><th class="num">Lignes</th>${cm.per_rule.map((r) => `<th class="num">Règle ${r.scenario}</th>`).join("")}<th class="num">Aucune règle</th></tr></thead>
+          <tbody>${heatRows}</tbody></table></div>
+        <p class="sub" style="margin-top:10px">Ligne « Légitime » : lignes saines signalées à tort par chaque règle. Colonne « Aucune règle » : fraudes qui passent entre les mailles.</p>
+      </section>
+
+      <section class="card section" aria-labelledby="t-cm2">
+        <h2 id="t-cm2">Matrice de confusion de chaque règle</h2>
+        <p class="sub">Au niveau des lignes de soins. « Positif » : la ligne relève du scénario de la règle. Les faux positifs comprennent les fraudes d'un autre scénario.</p>
+        <div class="panel-grid">${cm.per_rule.map((r) => `
+          <div class="panel">
+            <h4>${scenarioHtml(r.scenario, `Règle ${r.scenario}. ${r.label}`)}</h4>
+            <div class="cm" role="table" aria-label="Matrice de confusion de la règle ${r.scenario}">
+              <div class="h" role="columnheader"></div><div class="h" role="columnheader">Signalée</div><div class="h" role="columnheader">Non signalée</div>
+              <div class="rh" role="rowheader">Fraude ${r.scenario}</div>
+              <div class="v good" role="cell">Vrais positifs<strong>${nf.format(r.tp)}</strong></div>
+              <div class="v bad" role="cell">Faux négatifs<strong>${nf.format(r.fn)}</strong></div>
+              <div class="rh" role="rowheader">Autre ligne</div>
+              <div class="v bad" role="cell">Faux positifs<strong>${nf.format(r.fp)}</strong></div>
+              <div class="v" role="cell">Vrais négatifs<strong>${nf.format(r.tn)}</strong></div>
+            </div>
+            <p class="metrics"><span>Précision <b>${pct1(r.precision)}</b></span><span>Rappel <b>${pct1(r.recall)}</b></span><span>F1 <b>${pct1(r.f1)}</b></span><span>Spécificité <b>${pct1(r.specificity)}</b></span></p>
+            ${r.fp_other_fraud ? `<p class="sub" style="margin:6px 0 0">Dont ${nf.format(r.fp_other_fraud)} faux positif${r.fp_other_fraud > 1 ? "s" : ""} qui ${r.fp_other_fraud > 1 ? "sont" : "est"} une fraude d'un autre scénario.</p>` : ""}
+          </div>`).join("")}</div>
+      </section>
+
+      <div class="grid two-col section" id="eval-gain">
+        <section class="card" aria-labelledby="t-gain">
+          <div class="card-head">
+            <div><h2 id="t-gain">Courbe de gain : combien de fraude pour N alertes traitées ?</h2>
+            <p class="sub">Le gestionnaire traite les ${nf.format(gain.alerts)} alertes de l'année dans un certain ordre. La courbe donne la part de la fraude injectée retrouvée après N alertes. L'ordre idéal traite d'abord les alertes qui contiennent le plus de fraude : il suppose de connaître la vérité et sert de repère.</p></div>
+            <div class="segmented" role="group" aria-label="Mesure"><button type="button" data-gm="amount" aria-pressed="true">Montant</button><button type="button" data-gm="lines" aria-pressed="false">Lignes</button></div>
+          </div>
+          <div class="capacity">
+            <label for="cap">Capacité : <strong id="cap-val"></strong></label>
+            <input id="cap" type="range" min="0" max="${capSteps.length - 1}" step="1" value="2">
+          </div>
+          ${legendHtml(strategies.map((x) => ({ cls: x.cls, label: x.label })))}
+          <div class="chart-wrap" style="height:300px"><canvas id="c-gain" role="img" aria-label="Courbes de gain cumulé selon l'ordre de traitement des alertes"></canvas></div>
+          <p id="gain-read" class="sub" style="margin-top:10px"></p>
+          <div id="gain-table"></div>
+        </section>
+        <section class="card" aria-labelledby="t-sev">
+          <h2 id="t-sev">Les alertes «&nbsp;haute&nbsp;» sont-elles plus souvent justes&nbsp;?</h2>
+          <p class="sub">Part des alertes qui visent au moins une ligne frauduleuse, par niveau de sévérité.</p>
+          <div class="chart-wrap" style="height:300px"><canvas id="c-sev" role="img" aria-label="Part des alertes justes par niveau de sévérité"></canvas></div>
+          <p class="sub" style="margin-top:10px">${pct(adv.severity[0].share_true)} des alertes «&nbsp;haute&nbsp;» sont justes, contre ${pct(adv.severity[2].share_true)} des «&nbsp;faible&nbsp;»&nbsp;: la sévérité classe bien la fiabilité de l'alerte. Elle ne classe pas les montants, d'où l'écart sur la courbe de gain.</p>
+          ${dataTable(["Sévérité", "Alertes", "Justes", "Part"], adv.severity.map((x) => [sevLabel[x.severity], nf.format(x.alerts), nf.format(x.true_alerts), pct1(x.share_true)]))}
+        </section>
+      </div>`;
+
+    // precision-recall panels
+    for (const sw of sweeps) {
+      const color = seriesColor(sw.scenario);
+      const pts = sw.points.filter((p) => p.precision !== null);
+      const curIdx = pts.findIndex((p) => p.is_current);
+      const bestIdx = pts.findIndex((p) => p.threshold === sw.best_f1_threshold);
+      const labels = [{ index: curIdx, text: `actuel ${fmtThreshold(sw, sw.current)}` }];
+      if (bestIdx !== curIdx && bestIdx >= 0) labels.push({ index: bestIdx, text: `F1 max ${fmtThreshold(sw, sw.best_f1_threshold)}`, below: true, muted: true });
+      [0, pts.length - 1].forEach((i) => { if (i !== curIdx && i !== bestIdx) labels.push({ index: i, text: fmtThreshold(sw, pts[i].threshold), muted: true, below: i === 0 }); });
+      makeChart(document.getElementById(`c-pr-${sw.scenario}`), {
+        type: "scatter",
+        data: {
+          datasets: [{
+            label: sw.label, data: pts.map((p) => ({ x: p.recall, y: p.precision, p })), showLine: true, clip: 12,
+            borderColor: color, backgroundColor: color, borderWidth: 2,
+            pointRadius: pts.map((_, i) => (i === curIdx ? 7 : 4)), pointHoverRadius: 8,
+            pointBorderColor: pts.map((_, i) => (i === curIdx ? css("--text") : css("--surface"))), pointBorderWidth: pts.map((_, i) => (i === curIdx ? 2.5 : 2)),
+          }],
+        },
+        options: {
+          layout: { padding: { right: 10, top: 8 } },
+          scales: {
+            x: { min: 0, max: 1, title: { display: true, text: "Rappel" }, ticks: { callback: (v) => pct(v), stepSize: 0.25 }, grid: { color: css("--grid") } },
+            y: { min: 0, max: 1, title: { display: true, text: "Précision" }, ticks: { callback: (v) => pct(v), stepSize: 0.25 }, border: { display: false } },
+          },
+          plugins: {
+            pointLabels: { items: labels },
+            tooltip: {
+              callbacks: {
+                title: (items) => `Seuil ${fmtThreshold(sw, items[0].raw.p.threshold)}${items[0].raw.p.is_current ? " (actuel)" : ""}`,
+                label: (it) => {
+                  const p = it.raw.p;
+                  return [`Précision ${pct1(p.precision)}, rappel ${pct1(p.recall)}`, `F1 ${pct1(p.f1)}`, `${nf1.format(p.alerts_per_day)} alertes/jour, dont ${nf1.format(p.false_alerts_per_day)} fausses`];
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    // severity calibration
+    makeChart(document.getElementById("c-sev"), {
+      type: "bar",
+      data: { labels: adv.severity.map((x) => sevLabel[x.severity]), datasets: [{ label: "Alertes justes", data: adv.severity.map((x) => x.share_true), backgroundColor: css("--accent"), borderRadius: 4, borderSkipped: "start", maxBarThickness: 48 }] },
+      options: {
+        scales: { x: { grid: { display: false } }, y: { min: 0, max: 1, ticks: { callback: (v) => pct(v), stepSize: 0.25 }, border: { display: false } } },
+        plugins: { tooltip: { callbacks: { label: (it) => { const x = adv.severity[it.dataIndex]; return `${pct1(x.share_true)} justes (${nf.format(x.true_alerts)} sur ${nf.format(x.alerts)})`; } } } },
+      },
+    });
+
+    // gain curve
+    let metric = "amount";
+    let capIdx = 2;
+    let gainChart = null;
+    const colorOf = { oracle: css("--chart-ref"), amount: css("--alt"), severity_amount: css("--accent"), chronological: css("--text-3") };
+    const drawGain = () => {
+      const capacity = Math.min(gain.alerts, Math.round(capSteps[capIdx] * gain.days));
+      document.getElementById("cap-val").textContent = `${nf.format(capSteps[capIdx])} alerte${capSteps[capIdx] > 1 ? "s" : ""} par jour (${nf.format(capacity)} sur l'année)`;
+      const at = Object.fromEntries(strategies.map((x) => [x.key, interpAt(gain.curves[x.key][metric], capacity)]));
+      const unit = metric === "amount" ? "des euros frauduleux" : "des lignes frauduleuses";
+      document.getElementById("gain-read").textContent = `Avec ${nf.format(capacity)} alertes traitées : tri par montant ${pct(at.amount)} ${unit}, sévérité puis montant ${pct(at.severity_amount)}, ordre d'arrivée ${pct(at.chronological)}. L'ordre idéal en retrouverait ${pct(at.oracle)}.`;
+      document.getElementById("gain-table").innerHTML = dataTable(["Ordre de traitement", `Retrouvé à ${nf.format(capacity)} alertes`, `Retrouvé après les ${nf.format(gain.alerts)} alertes`],
+        strategies.map((x) => [x.label, pct1(at[x.key]), pct1(gain.curves[x.key][metric].at(-1).y)]));
+      if (gainChart) { gainChart.destroy(); charts = charts.filter((c) => c !== gainChart); }
+      gainChart = makeChart(document.getElementById("c-gain"), {
+        type: "line",
+        data: {
+          datasets: strategies.map((x) => ({
+            label: x.label, data: gain.curves[x.key][metric].map((p) => ({ x: p.k, y: p.y })),
+            borderColor: colorOf[x.key], backgroundColor: colorOf[x.key], borderWidth: x.key === "oracle" ? 1.5 : 2,
+            borderDash: x.key === "oracle" ? [5, 4] : [], pointRadius: 0, pointHoverRadius: 4, tension: 0,
+          })),
+        },
+        options: {
+          interaction: { mode: "nearest", axis: "x", intersect: false },
+          scales: {
+            x: { type: "linear", min: 0, max: gain.alerts, title: { display: true, text: "Alertes traitées, dans l'ordre choisi" }, grid: { display: false }, ticks: { precision: 0 } },
+            y: { min: 0, max: 1, title: { display: true, text: metric === "amount" ? "Part du montant frauduleux retrouvé" : "Part des lignes frauduleuses retrouvées" }, ticks: { callback: (v) => pct(v), stepSize: 0.25 }, border: { display: false } },
+          },
+          plugins: {
+            refLine: { lines: [{ value: capacity, label: `Capacité ${nf.format(capacity)}` }] },
+            tooltip: { callbacks: { title: (items) => `${nf.format(Math.round(items[0].parsed.x))} alertes traitées`, label: (it) => `${it.dataset.label} : ${pct1(it.parsed.y)}` } },
+          },
+        },
+      });
+    };
+    drawGain();
+    document.getElementById("cap").addEventListener("input", (ev) => { capIdx = Number(ev.target.value); drawGain(); });
+    box.querySelectorAll("[data-gm]").forEach((b) => b.addEventListener("click", () => {
+      metric = b.dataset.gm;
+      box.querySelectorAll("[data-gm]").forEach((y) => y.setAttribute("aria-pressed", String(y === b)));
+      drawGain();
+    }));
   }
 
   function pctCell(v) {

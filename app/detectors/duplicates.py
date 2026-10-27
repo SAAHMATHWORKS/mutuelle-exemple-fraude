@@ -22,7 +22,7 @@ SPLIT_PIECE_MAX = 0.75  # each piece below 75 % of the usual price
 SPLIT_SUM_RANGE = (0.6, 1.6)  # pieces add up to about one usual price
 
 
-def _clusters(grp: pd.DataFrame, repeatable: bool) -> list[pd.DataFrame]:
+def _clusters(grp: pd.DataFrame, repeatable: bool, max_gap_days: int = MAX_GAP_DAYS) -> list[pd.DataFrame]:
     if repeatable:
         out = []
         for _, same in grp.groupby(["day", "billed_amount"], sort=True):
@@ -32,19 +32,19 @@ def _clusters(grp: pd.DataFrame, repeatable: bool) -> list[pd.DataFrame]:
     days = grp["day"].to_numpy()
     out, start = [], 0
     for i in range(1, len(grp) + 1):
-        if i == len(grp) or days[i] - days[i - 1] > MAX_GAP_DAYS:
+        if i == len(grp) or days[i] - days[i - 1] > max_gap_days:
             if i - start >= 2:
                 out.append(grp.iloc[start:i])
             start = i
     return out
 
 
-def detect(claims: pd.DataFrame, refs: pd.DataFrame) -> list[Alert]:
+def detect(claims: pd.DataFrame, refs: pd.DataFrame, max_gap_days: int = MAX_GAP_DAYS) -> list[Alert]:
     keyed = claims.assign(ref=refs["ref_median"]).sort_values(["member_id", "provider_id", "act_code", "day", "line_id"])
     # Cheap vectorised pre-filter: keep only lines that have a neighbour of the same key.
     key = keyed["member_id"] + "|" + keyed["provider_id"] + "|" + keyed["act_code"]
     gap_prev = keyed["day"].diff()
-    near_prev = (key == key.shift(1)) & (gap_prev <= MAX_GAP_DAYS)
+    near_prev = (key == key.shift(1)) & (gap_prev <= max_gap_days)
     near = near_prev | near_prev.shift(-1, fill_value=False)
     repeatable = keyed["act_code"].map(lambda a: ACTS[a].repeatable)
     same_day_same_amount = keyed.duplicated(["member_id", "provider_id", "act_code", "day", "billed_amount"], keep=False)
@@ -53,7 +53,7 @@ def detect(claims: pd.DataFrame, refs: pd.DataFrame) -> list[Alert]:
     for (member, provider, act_code), grp in candidates.groupby(["member_id", "provider_id", "act_code"], sort=True):
         act = ACTS[act_code]
         grp = grp.sort_values(["day", "line_id"])
-        for cl in _clusters(grp, act.repeatable):
+        for cl in _clusters(grp, act.repeatable, max_gap_days):
             amounts = cl["billed_amount"].tolist()
             ref = cl["ref"].iloc[0]
             total = sum(amounts)

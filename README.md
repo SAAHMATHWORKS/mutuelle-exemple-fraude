@@ -70,6 +70,7 @@ flowchart LR
 | `GET /api/overview` | Alerts per day and per scenario, headline numbers |
 | `GET /api/alerts` | Queue with filters (`scenario`, `severity`, `decision`, `q`, `date_from`, `date_to`), sorting and pagination (≤ 100 per page) |
 | `GET /api/alerts/{id}` | Full explanation, evidence rows, price chart data, ground truth (demo only) |
+| `GET /api/evaluation/advanced` | Threshold sweeps (precision and recall of each rule re-run with other thresholds), confusion matrices, gain curves and precision by severity. Computed in the background after each (re)generation; returns `{"status": "computing"}` until ready |
 | `GET /api/exploration` | Exploratory aggregates: amount distribution, price spread per act, seasonality, daily volume, provider mix, Lorenz curves, age versus spend, and each scenario's signal split into legitimate lines and injected fraud |
 | `GET /api/evaluation` | Per-scenario recall and precision, false alerts per day, alert volume per day, and the noise curve |
 | `POST /api/regenerate` | New dataset: `seed`, `size` (2,000 to 50,000) and `noise_level` (0 to 1). Limited to 1 call per 15 s per client and 6 per minute overall. |
@@ -78,6 +79,7 @@ The code is organised as follows:
 - `app/generator.py` builds the data.
 - `app/detectors/` holds one module per scenario.
 - `app/pipeline.py` runs the detectors and evaluates them.
+- `app/advanced_eval.py` computes the threshold sweeps, confusion matrices and gain curves.
 - `app/exploration.py` computes the exploratory analysis shown in the "Exploration des données" view.
 - `app/main.py` serves the API.
 - `app/static/` holds the UI.
@@ -167,13 +169,22 @@ The tests prove three things:
 - the price reference never uses a claim dated on or after the claim being scored (checked against a brute-force median, and by rewriting the future and showing that past scores do not change);
 - each detector recovers at least 85 % of its own injected cases at low noise.
 
+### Deeper evaluation
+
+The **Évaluation** page goes beyond one recall and one precision per rule:
+
+- **Precision-recall trade-off per threshold.** Each rule is re-run with other values of its main threshold (for example ×1.2 to ×4 for the price rule). Its current threshold and the threshold with the best F1 are marked. On the default data, ×1.8 would raise the price rule's recall from 87 % to 95 % at the same precision. It is not adopted: choosing it on the same data would be overfitting.
+- **Which rule catches which fraud.** A matrix of injected scenario × rule shows cross-detection and the fraud that no rule sees, plus a 2 × 2 confusion matrix, F1 and specificity per rule.
+- **Gain curve.** It shows how much of the injected fraud a handler recovers after N alerts, depending on how the queue is sorted. With one alert a day (365 a year), sorting by amount recovers 75 % of the fraudulent euros, against 58 % for severity then amount and 36 % for arrival order.
+- **Severity check.** 92 % of high-severity alerts are right, against 41 % of low-severity ones. Severity ranks reliability, not money.
+
 ## Roadmap
 
 The project is being extended in stages, each one tested before the next:
 
 1. ~~Clean repository with CI~~ (done)
 2. ~~"Exploration des données" view: distributions, seasonality, concentration and fraud-versus-legitimate charts~~ (done)
-3. Deeper evaluation: precision-recall curves per threshold, confusion matrices, gain curve for the handler's queue
+3. ~~Deeper evaluation: precision-recall curves per threshold, confusion matrices, gain curve for the handler's queue~~ (done)
 4. Provider heatmaps, a member–provider network graph, and an unsupervised model shown *only as a comparison* with the rules
 5. Self-hosted deployment behind Nginx, isolated from other services on the same server
 
@@ -204,7 +215,7 @@ L'interface en français propose cinq vues :
 - une exploration des données en douze graphiques (distribution des montants, dispersion des prix, saisonnalité, concentration, et pour chaque scénario la variable sur laquelle porte la règle) ;
 - la file d'alertes ;
 - le détail d'une alerte ;
-- une évaluation honnête : rappel, précision, fausses alertes par jour, effet du bruit, et un encadré « Ce qui ne marche pas ».
+- une évaluation honnête : rappel, précision, fausses alertes par jour, courbes précision-rappel selon le seuil, matrices de confusion, courbe de gain de la file d'alertes, effet du bruit, et un encadré « Ce qui ne marche pas ».
 
 **Limite principale :** les fraudes ont été injectées par l'auteur. Les scores mesurent donc la capacité à retrouver ces motifs, pas la performance sur de vraies fraudes.
 

@@ -96,6 +96,20 @@ def test_exploration_contract(client):
         assert {"legit_rule_share", "fraud_rule_share", "n_legit", "n_fraud"} <= sig.keys()
 
 
+def test_advanced_evaluation_is_computed_in_the_background(client):
+    import time
+
+    body = client.get("/api/evaluation/advanced").json()
+    deadline = time.monotonic() + 60
+    while body["status"] == "computing" and time.monotonic() < deadline:
+        time.sleep(0.5)
+        body = client.get("/api/evaluation/advanced").json()
+    assert body["status"] == "ready"
+    assert {"sweeps", "confusion", "gain", "severity"} <= body.keys()
+    assert len(body["sweeps"]) == 5 and all(s["points"] for s in body["sweeps"])
+    assert {"oracle", "amount", "severity_amount", "chronological", "random"} == body["gain"]["curves"].keys()
+
+
 def test_regenerate_validates_and_is_rate_limited(client, monkeypatch):
     monkeypatch.setattr(app_state, "limiter", app_state.RateLimiter(per_client_seconds=60, global_per_minute=6))
     assert client.post("/api/regenerate", json={"size": 10_000_000}).status_code == 422

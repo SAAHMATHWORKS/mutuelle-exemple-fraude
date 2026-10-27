@@ -8,6 +8,7 @@ import threading
 import time
 from collections import deque
 
+from app.advanced_eval import advanced
 from app.generator import DEFAULT_SEED, DEFAULT_SIZE, generate
 from app.pipeline import Result, run
 
@@ -34,7 +35,16 @@ class AppState:
         result = run(generate(seed=seed, size=size, noise_level=noise_level))
         with self._lock:
             self.result = result
+        # Threshold sweeps re-run every rule several times (a few seconds): never block a page on it.
+        threading.Thread(target=self._compute_advanced, args=(result,), daemon=True).start()
         return result
+
+    @staticmethod
+    def _compute_advanced(result: Result) -> None:
+        try:
+            result.advanced = advanced(result.dataset.claims, result.refs, result.alerts)
+        except Exception as exc:  # pragma: no cover - defensive
+            result.advanced = {"error": str(exc)}
 
     def current(self) -> Result:
         if self.result is None:

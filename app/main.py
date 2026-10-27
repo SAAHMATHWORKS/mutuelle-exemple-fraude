@@ -307,6 +307,17 @@ def evaluation() -> dict:
     }
 
 
+@app.get("/api/evaluation/advanced")
+def evaluation_advanced() -> dict:
+    r = state.current()
+    adv = r.advanced
+    if adv is None:
+        return {"status": "computing"}
+    if "error" in adv:
+        return {"status": "error", "error": adv["error"]}
+    return {"status": "ready", "dataset": _dataset_meta(), **adv}
+
+
 @app.get("/api/exploration")
 def exploration() -> dict:
     r = state.current()

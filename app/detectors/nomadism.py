@@ -30,7 +30,7 @@ def _phrase(ptype: str, n: int) -> str:
     return f"{n} {adj} {sing if n == 1 else plur}"
 
 
-def detect(claims: pd.DataFrame) -> list[Alert]:
+def detect(claims: pd.DataFrame, min_new: int = MIN_NEW_PROVIDERS, window_days: int = WINDOW_DAYS) -> list[Alert]:
     watched = claims[claims.provider_type.isin(WATCHED_TYPES)]
     # Pre-filter: a member can only trigger if three providers of one type were
     # first seen within WINDOW_DAYS of each other.
@@ -41,8 +41,8 @@ def detect(claims: pd.DataFrame) -> list[Alert]:
         .sort_values(["member_id", "provider_type", "day"])
     )
     grp_key = first["member_id"] + "|" + first["provider_type"]
-    later = first["day"].shift(-(MIN_NEW_PROVIDERS - 1))
-    ok = (grp_key == grp_key.shift(-(MIN_NEW_PROVIDERS - 1))) & (later - first["day"] <= WINDOW_DAYS - 1)
+    later = first["day"].shift(-(min_new - 1))
+    ok = (grp_key == grp_key.shift(-(min_new - 1))) & (later - first["day"] <= window_days - 1)
     suspects = set(first.loc[ok, "member_id"])
     watched = watched[watched.member_id.isin(suspects)]
     alerts: list[Alert] = []
@@ -58,10 +58,10 @@ def detect(claims: pd.DataFrame) -> list[Alert]:
                 first_seen.setdefault(p, int(d))
             for i in range(len(typed)):
                 d = days[i]
-                lo = d - WINDOW_DAYS + 1
+                lo = d - window_days + 1
                 in_window = [k for k in range(i + 1) if days[k] >= lo]
                 new_provs = {provs[k] for k in in_window if first_seen[provs[k]] >= lo}
-                if len(new_provs) >= MIN_NEW_PROVIDERS:
+                if len(new_provs) >= min_new:
                     for k in in_window:
                         if first_seen[provs[k]] >= lo:
                             flagged[int(ids[k])] = int(days[k])
@@ -71,7 +71,7 @@ def detect(claims: pd.DataFrame) -> list[Alert]:
         ordered = sorted(flagged.items(), key=lambda kv: (kv[1], kv[0]))
         bursts: list[list[tuple[int, int]]] = [[ordered[0]]]
         for item in ordered[1:]:
-            if item[1] - bursts[-1][-1][1] > WINDOW_DAYS:
+            if item[1] - bursts[-1][-1][1] > window_days:
                 bursts.append([item])
             else:
                 bursts[-1].append(item)
@@ -82,7 +82,7 @@ def detect(claims: pd.DataFrame) -> list[Alert]:
             per_type = sub.groupby("provider_type")["provider_id"].nunique().to_dict()
             biggest = max(per_type.values())
             parts = " et ".join(_phrase(t, n) for t, n in sorted(per_type.items()))
-            context = lines[(lines.day >= first - WINDOW_DAYS) & (lines.day <= last) & ~lines.line_id.isin(ids_b)]
+            context = lines[(lines.day >= first - window_days) & (lines.day <= last) & ~lines.line_id.isin(ids_b)]
             alerts.append(
                 Alert(
                     scenario=3,

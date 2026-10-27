@@ -17,12 +17,17 @@ HIGH_AMOUNT = 150.0
 MIN_AMOUNT_FOR_ACTION = 25.0
 
 
-def detect(claims: pd.DataFrame) -> list[Alert]:
+def detect(claims: pd.DataFrame, min_amount: float = 0.0) -> list[Alert]:
+    """``min_amount`` (default 0: every line) ignores incoherent lines billed below it."""
+
     def coherent(act: str, diag: str) -> bool:
         allowed = ACTS[act].allowed_groups
         return allowed is None or diagnosis_group(diag) in allowed
 
-    mask = [not coherent(a, d) for a, d in zip(claims.act_code, claims.diagnosis_code, strict=True)]
+    mask = [
+        not coherent(a, d) and amt >= min_amount
+        for a, d, amt in zip(claims.act_code, claims.diagnosis_code, claims.billed_amount, strict=True)
+    ]
     hits = claims[mask]
     by_member = claims.groupby("member_id").indices
     alerts: list[Alert] = []
