@@ -2270,8 +2270,7 @@
   }
   // Chrome may discard the pixels of canvases while the tab is in the background (to save memory)
   // and give back empty canvases: Chart.js does not redraw them by itself. So: redraw every chart
-  // when the tab comes back, redraw a canvas the moment its context is restored, and check each
-  // canvas when it scrolls into view.
+  // when the tab comes back, and redraw a canvas the moment its context is restored.
   let lostCanvases = 0;
   document.addEventListener("contextlost", () => { lostCanvases += 1; }, true);
   document.addEventListener("contextrestored", (e) => {
@@ -2289,31 +2288,14 @@
   });
   window.addEventListener("pageshow", (e) => { if (e.persisted) redrawAll(); }); // back/forward cache
 
-  // A drawn chart always leaves ink on a few horizontal rows (axes, grid, bars, nodes).
-  function looksBlank(canvas) {
-    try {
-      const ctx = canvas.getContext("2d");
-      for (const f of [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) {
-        const row = ctx.getImageData(0, Math.floor(canvas.height * f), canvas.width, 1).data;
-        for (let i = 3; i < row.length; i += 4) if (row[i] !== 0) return false;
-      }
-      return true;
-    } catch { return false; }
-  }
+  // A canvas that scrolls into view without a chart (its view failed to draw it) makes the view redraw
+  // once. No pixel readback: the cause of blank charts was found and fixed in chartDefaults().
   const seen = new IntersectionObserver((entries) => {
     for (const en of entries) {
       if (!en.isIntersecting || !window.Chart) continue;
       const canvas = en.target;
-      requestAnimationFrame(() => setTimeout(() => {
-        if (!document.contains(canvas)) return;
-        const ch = Chart.getChart(canvas);
-        if (!ch) { checkCharts(); return; }
-        seen.unobserve(canvas); // one check per canvas; tab switches are handled by redrawAll()
-        if (looksBlank(canvas)) {
-          ch.resize(); ch.render();
-          report("blank-canvas-redrawn", { id: canvas.id, w: canvas.width, h: canvas.height, visible: document.visibilityState });
-        }
-      }, 400)); // after the chart's own short animation
+      seen.unobserve(canvas);
+      requestAnimationFrame(() => { if (document.contains(canvas) && !Chart.getChart(canvas)) checkCharts(); });
     }
   }, { threshold: 0.2 });
   function watchCanvases() { view.querySelectorAll("canvas:not([data-watched])").forEach((c) => { c.dataset.watched = "1"; seen.observe(c); }); }
