@@ -28,6 +28,7 @@
   let lastQueueHash = "#/alertes";
   let meta = null; // scenarios + decisions labels, loaded once
   let currentView = "overview";
+  let navGen = 0; // incremented by each route(): late answers of an older route are dropped
   let explainCache = null; // « Lecture IA » commentaries, reloaded after a regeneration
 
   // ---------------------------------------------------------------- storage
@@ -169,6 +170,7 @@
     });
   }
   async function route() {
+    navGen += 1;
     cleanup();
     chartDefaults();
     const { parts, params } = parseHash();
@@ -208,7 +210,9 @@
 
   // =============================================================== OVERVIEW
   async function renderOverview() {
+    const gen = navGen;
     const o = await api("/api/overview");
+    if (gen !== navGen) return; // the visitor has moved on: never draw over the newer view
     meta = { scenarios: o.scenarios, decisions: o.decisions };
     const d = o.dataset;
     const h = o.highlights;
@@ -472,7 +476,9 @@
 
   // ================================================================== QUEUE
   async function renderQueue(params) {
+    const gen = navGen;
     const m = await ensureMeta();
+    if (gen !== navGen) return; // the visitor has moved on: never draw over the newer view
     const p = (k, dflt = "") => params.get(k) ?? dflt;
     view.innerHTML = `
       <div class="page-head"><div><h1>File d'alertes</h1>
@@ -519,6 +525,7 @@
       query.set("page_size", "20");
       let data;
       try { data = await api(`/api/alerts?${query}`); } catch (e) { results.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+      if (!document.contains(results)) return;
       if (!data.items.length) { results.innerHTML = `<p>Aucune alerte ne correspond à ces filtres.</p>`; return; }
       results.innerHTML = `
         <div class="table-scroll"><table class="responsive alerts-table">
@@ -567,8 +574,10 @@
   };
 
   async function renderDetail(id) {
+    const gen = navGen;
     const m = await ensureMeta();
     const a = await api(`/api/alerts/${encodeURIComponent(id)}`);
+    if (gen !== navGen) return; // the visitor has moved on: never draw over the newer view
     const facts = Object.entries(a.details).filter(([k]) => FACT_LABELS[k]).map(([k, v]) => `<div><dt>${FACT_LABELS[k][0]}</dt><dd>${FACT_LABELS[k][1](v)}</dd></div>`).join("");
     const local = memoryDecisions[a.id];
     const truth = a.ground_truth;
@@ -793,7 +802,9 @@
 
   async function renderExploration() {
     registerPlugins();
+    const gen = navGen;
     const x = await api("/api/exploration");
+    if (gen !== navGen) return; // the visitor has moved on: never draw over the newer view
     const S = x.summary;
     const P = x.portfolio;
     const G = x.signals;
@@ -1179,7 +1190,9 @@
 
   async function renderProviders() {
     registerPlugins();
+    const gen = navGen;
     const x = await api("/api/providers");
+    if (gen !== navGen) return; // the visitor has moved on: never draw over the newer view
     const H = x.heatmap;
     const SC = x.scorecard;
     const N = x.network;
@@ -1277,7 +1290,9 @@
   // ============================================================== MODEL VIEW
   async function renderModel() {
     registerPlugins();
+    const gen = navGen;
     const m = await api("/api/model");
+    if (gen !== navGen) return; // the visitor has moved on: never draw over the newer view
     if (m.status === "computing") {
       view.innerHTML = `<div class="page-head"><div><h1>Modèle non supervisé</h1></div></div><section class="card"><p class="loading">Entraînement de l'Isolation Forest en cours (quelques secondes après chaque génération)… la page s'affichera seule.</p></section>`;
       pollTimer = setTimeout(() => { if (parseHash().parts[0] === "modele") route(); }, 2000);
@@ -1289,6 +1304,7 @@
     const BR = m.models.brutes;
     const o = m.overlap;
     const scenLabels = meta ? meta.scenarios : (await ensureMeta()).scenarios;
+    if (gen !== navGen) return;
     const keys = ["1", "2", "3", "4", "5"];
     const series = [
       { label: "Règles (système actuel)", cls: "acc", color: css("--accent"), at: R },
@@ -1443,7 +1459,9 @@
 
   // ============================================================= EVALUATION
   async function renderEvaluation() {
+    const gen = navGen;
     const e = await api("/api/evaluation");
+    if (gen !== navGen) return; // the visitor has moved on: never draw over the newer view
     const o = e.overall;
     const curve = e.noise_curve;
     const causes = Object.entries(e.false_alert_causes);
@@ -1574,12 +1592,13 @@
   async function loadAdvanced() {
     const box = document.getElementById("adv");
     if (!box) return;
+    const gen = navGen;
     let adv;
     try { adv = await api("/api/evaluation/advanced"); } catch (e) {
       box.innerHTML = `<section class="card"><p class="error">${esc(e.message)}</p></section>`;
       return;
     }
-    if (!document.getElementById("adv")) return; // user left the page
+    if (gen !== navGen || !document.contains(box)) return; // user left or the view was redrawn
     if (adv.status === "computing") {
       box.innerHTML = `<section class="card"><p class="loading">Calcul des courbes par seuil en cours (chaque règle est relancée avec plusieurs seuils)… la section s'affichera seule.</p></section>`;
       advTimer = setTimeout(loadAdvanced, 2000);
@@ -1590,6 +1609,7 @@
       return;
     }
     renderAdvanced(adv);
+    checkCharts();
   }
 
   function interpAt(points, k) {
@@ -2233,10 +2253,60 @@
       if (repairedHash !== hash) { repairedHash = hash; route(); }
     }, 2500);
   }
-  // A page opened in a background tab is laid out when it becomes visible: resize the charts then.
+  // Chrome may discard the pixels of canvases while the tab is in the background (to save memory)
+  // and give back empty canvases: Chart.js does not redraw them by itself. So: redraw every chart
+  // when the tab comes back, redraw a canvas the moment its context is restored, and check each
+  // canvas when it scrolls into view.
+  let lostCanvases = 0;
+  document.addEventListener("contextlost", () => { lostCanvases += 1; }, true);
+  document.addEventListener("contextrestored", (e) => {
+    const ch = window.Chart && Chart.getChart(e.target);
+    if (ch) ch.render();
+  }, true);
+  function redrawAll() {
+    if (!window.Chart) return;
+    Object.values(Chart.instances).forEach((c) => { if (document.contains(c.canvas)) { c.resize(); c.render(); } });
+  }
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && window.Chart) Object.values(Chart.instances).forEach((c) => c.resize());
+    if (document.visibilityState !== "visible") return;
+    redrawAll();
+    if (lostCanvases) { report("canvas-context-lost", { canvases: lostCanvases }); lostCanvases = 0; }
   });
+  window.addEventListener("pageshow", (e) => { if (e.persisted) redrawAll(); }); // back/forward cache
+
+  // A drawn chart always leaves ink on a few horizontal rows (axes, grid, bars, nodes).
+  function looksBlank(canvas) {
+    try {
+      const ctx = canvas.getContext("2d");
+      for (const f of [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) {
+        const row = ctx.getImageData(0, Math.floor(canvas.height * f), canvas.width, 1).data;
+        for (let i = 3; i < row.length; i += 4) if (row[i] !== 0) return false;
+      }
+      return true;
+    } catch { return false; }
+  }
+  const seen = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting || !window.Chart) continue;
+      const canvas = en.target;
+      requestAnimationFrame(() => setTimeout(() => {
+        if (!document.contains(canvas)) return;
+        const ch = Chart.getChart(canvas);
+        if (!ch) { checkCharts(); return; }
+        seen.unobserve(canvas); // one check per canvas; tab switches are handled by redrawAll()
+        if (looksBlank(canvas)) {
+          ch.resize(); ch.render();
+          report("blank-canvas-redrawn", { id: canvas.id, w: canvas.width, h: canvas.height, visible: document.visibilityState });
+        }
+      }, 400)); // after the chart's own short animation
+    }
+  }, { threshold: 0.2 });
+  function watchCanvases() { view.querySelectorAll("canvas:not([data-watched])").forEach((c) => { c.dataset.watched = "1"; seen.observe(c); }); }
+  new MutationObserver(() => requestAnimationFrame(watchCanvases)).observe(view, { childList: true, subtree: true });
+
+  // Any script error is reported too: a chart that throws while drawing would otherwise fail silently.
+  window.addEventListener("error", (e) => report("js-error", { msg: String(e.message).slice(0, 160), src: `${String(e.filename).split("/").pop()}:${e.lineno}:${e.colno}` }));
+  window.addEventListener("unhandledrejection", (e) => report("js-rejection", { msg: String(e.reason && (e.reason.stack || e.reason.message) || e.reason).slice(0, 300) }));
 
   let firstRender = false;
   const start = () => { if (!firstRender) { firstRender = true; route(); } };
