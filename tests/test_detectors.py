@@ -86,3 +86,20 @@ def test_three_new_doctors_in_a_week_are_flagged():
     alerts = nomadism.detect(_frame(rows))
     assert len(alerts) == 1 and alerts[0].line_ids == [2, 3, 4]
     assert "3 nouveaux médecins généralistes" in alerts[0].reason
+
+
+def test_price_rule_with_a_threshold_nothing_reaches():
+    from app.detectors import price
+    from app.generator import generate
+    from app.pipeline import run
+
+    r = run(generate(seed=9, size=3_000, noise_level=0.4))
+    assert price.detect(r.dataset.claims, r.refs, ratio_flag=1_000.0) == []
+
+
+def test_early_claim_rule_with_no_window():
+    from app.detectors import early_claim
+    from app.generator import generate
+
+    claims = generate(seed=9, size=3_000).claims
+    assert early_claim.detect(claims.iloc[:0], max_days=30) == []

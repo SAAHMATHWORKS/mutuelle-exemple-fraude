@@ -20,7 +20,8 @@ MIN_AMOUNT = 150.0
 def detect(claims: pd.DataFrame, max_days: int = MAX_DAYS) -> list[Alert]:
     since = claims["day"] - claims["policy_start_day"]
     costly = claims["act_code"].isin(COSTLY_ACTS) | (claims["billed_amount"] >= MIN_AMOUNT)
-    hits = claims[(since >= 0) & (since <= max_days) & costly].assign(since=since)
+    mask = (since >= 0) & (since <= max_days) & costly
+    hits = claims[mask].assign(since=since[mask])  # same rows in every column, even when none match
     by_member = claims.groupby("member_id").indices
     alerts: list[Alert] = []
     for row in hits.itertuples(index=False):
