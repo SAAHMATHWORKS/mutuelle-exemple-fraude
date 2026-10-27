@@ -13,6 +13,10 @@ def note(msg):
     print(f"::notice title=probe::{msg}".replace("\n", " | "))
 
 
+def warn(msg):
+    print(f"::warning title=probe::{msg}".replace("\n", " | "))
+
+
 def err(step):
     print(f"::error title={step}::" + traceback.format_exc()[-900:].replace("\n", " | "))
 
@@ -90,20 +94,20 @@ async def main():
         from pydantic_ai.usage import UsageLimits
 
         r = await agent.run("Combien ?", deps=deps, model=FunctionModel(fn), usage_limits=UsageLimits(request_limit=6), timeout=20)
-        note(f"run ok: output={r.output!r} usage={r.usage} calls={calls['n']} seen={deps.seen}")
-        note("result attrs: " + ", ".join(a for a in ["output", "usage", "all_messages", "new_messages"] if hasattr(r, a)))
+        warn(f"run ok: output={r.output!r} usage={r.usage} calls={calls['n']} seen={deps.seen}")
+        warn("result attrs: " + ", ".join(a for a in ["output", "usage", "all_messages", "new_messages"] if hasattr(r, a)))
     except Exception:
         err("run")
     try:
         from pydantic_ai.usage import UsageLimits
 
-        note("UsageLimits params: " + ", ".join(inspect.signature(UsageLimits).parameters))
+        warn("UsageLimits params: " + ", ".join(inspect.signature(UsageLimits).parameters))
     except Exception:
         err("usage-limits")
     try:
         with agent.override(model=TestModel()):
             r2 = await agent.run("x", deps=Deps())
-        note(f"TestModel ok: {r2.output!r}")
+        warn(f"TestModel ok: {r2.output!r}")
     except Exception:
         err("testmodel")
     try:
@@ -114,7 +118,7 @@ async def main():
         try:
             await agent.run("x", deps=Deps(), model=m, model_settings={"timeout": 2}, timeout=5)
         except Exception as exc:
-            note(f"unreachable provider raises {type(exc).__module__}.{type(exc).__name__}")
+            warn(f"unreachable provider raises {type(exc).__module__}.{type(exc).__name__}")
     except Exception:
         err("openai-model")
     try:
@@ -122,15 +126,15 @@ async def main():
         from pydantic_ai.providers.anthropic import AnthropicProvider
 
         AnthropicModel("m", provider=AnthropicProvider(api_key="test"))
-        note("AnthropicModel ok")
+        warn("AnthropicModel ok")
     except Exception:
         err("anthropic-model")
     try:
         bad = FunctionModel(lambda m, i: msgs.ModelResponse(parts=[msgs.TextPart("toujours 999")]))
         await agent.run("x", deps=Deps(), model=bad)
-        note("bad model did not raise")
+        warn("bad model did not raise")
     except Exception as exc:
-        note(f"retries exhausted raises {type(exc).__module__}.{type(exc).__name__}")
+        warn(f"retries exhausted raises {type(exc).__module__}.{type(exc).__name__}")
 
 
 asyncio.run(main())
