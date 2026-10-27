@@ -358,7 +358,7 @@ def _providers(r) -> list[dict]:
     out.append(
         _item(
             "net",
-            "Graphe adhérents – prestataires",
+            "Graphe adhérents et prestataires",
             f,
             f"Un adhérent signalé voit en moyenne {f.num(net['mean_providers_flagged'], 1)} prestataires, {f.num(net['mean_visits_per_provider_flagged'], 1)} fois "
             f"chacun ; un adhérent fidèle en voit {f.num(net['mean_providers_contrast'], 1)}, {f.num(net['mean_visits_per_provider_contrast'], 1)} fois chacun.",

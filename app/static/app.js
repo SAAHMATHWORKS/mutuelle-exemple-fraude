@@ -1,4 +1,4 @@
-/* Mutuelle Exemple — fraud demo front end (vanilla JS + Chart.js, no build step). */
+/* Mutuelle Exemple: fraud demo front end (vanilla JS + Chart.js, no build step). */
 "use strict";
 
 (() => {
@@ -8,7 +8,7 @@
   const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
   const eur0 = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
   const pctf = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 0 });
-  const pct = (v) => (v === null || v === undefined ? "—" : pctf.format(v));
+  const pct = (v) => (v === null || v === undefined ? "n.d." : pctf.format(v));
   const dateLong = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
   const dateShort = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -335,7 +335,7 @@
               <td data-label="Scénarios"><span class="cv">${p.scenarios.map((s) => `<span class="swatch s${s}" title="${esc(o.scenarios[s])}" aria-label="${esc(o.scenarios[s])}"></span>`).join(" ")}</span></td>
               <td data-label="Alertes" class="num">${nf.format(p.alerts)}</td><td data-label="Montant" class="num">${eur0.format(p.amount)}</td></tr>`).join("")}</tbody>
           </table></div>
-          <p style="margin:10px 0 0"><a href="#/prestataires">Profil de facturation et graphe adhérents–prestataires →</a></p>
+          <p style="margin:10px 0 0"><a href="#/prestataires">Profil de facturation et graphe adhérents et prestataires →</a></p>
         </section>
       </div>
 
@@ -544,7 +544,7 @@
               <td data-label="Décision suggérée">${esc(a.decision_label)}${local ? `<div class="local-decision">Votre choix (démo) : ${esc(local.label)}</div>` : ""}</td>
             </tr>`;
           }).join("")}</tbody></table></div>
-        <div class="pager"><span>${nf.format((data.page - 1) * data.page_size + 1)}–${nf.format(Math.min(data.page * data.page_size, data.total))} sur ${nf.format(data.total)}</span>
+        <div class="pager"><span>${nf.format((data.page - 1) * data.page_size + 1)} à ${nf.format(Math.min(data.page * data.page_size, data.total))} sur ${nf.format(data.total)}</span>
           <span class="btns"><button class="btn" type="button" id="prev" ${data.page <= 1 ? "disabled" : ""}>Précédent</button>
           <button class="btn" type="button" id="next" ${data.page >= data.pages ? "disabled" : ""}>Suivant</button></span></div>`;
       results.querySelectorAll("tr.clickable").forEach((tr) => tr.addEventListener("click", (e) => {
@@ -562,7 +562,7 @@
   // ================================================================= DETAIL
   const FACT_LABELS = {
     ratio: ["Rapport au prix habituel", (v) => `× ${nf1.format(v)}`],
-    reference_median: ["Prix habituel (médiane)", (v) => (v === null ? "—" : eur.format(v))],
+    reference_median: ["Prix habituel (médiane)", (v) => (v === null ? "n.d." : eur.format(v))],
     n_prior: ["Factures antérieures utilisées", (v) => nf.format(v)],
     provider_previous_price_alerts: ["Alertes de prix déjà levées chez ce prestataire (90 j)", (v) => nf.format(v)],
     kind: ["Type", (v) => (v === "fractionnement" ? "Facture fractionnée" : "Doublon")],
@@ -582,9 +582,9 @@
     const local = memoryDecisions[a.id];
     const truth = a.ground_truth;
     const truthText = truth.is_fraud
-      ? `Fraude injectée par le générateur : scénario ${truth.injected_scenarios.map((s) => `${s} (${esc(m.scenarios[s])})`).join(", ")}${truth.notes.length ? ` — ${truth.notes.map(esc).join(" ; ")}` : ""}.`
+      ? `Fraude injectée par le générateur : scénario ${truth.injected_scenarios.map((s) => `${s} (${esc(m.scenarios[s])})`).join(", ")}${truth.notes.length ? ` : ${truth.notes.map(esc).join(" ; ")}` : ""}.`
       : truth.legit_oddities.length
-        ? `Fausse alerte : ces lignes sont légitimes, mais présentent une particularité qui ressemble à de la fraude — ${truth.legit_oddities.map(esc).join(" ; ")}.`
+        ? `Fausse alerte : ces lignes sont légitimes, mais présentent une particularité qui ressemble à de la fraude : ${truth.legit_oddities.map(esc).join(" ; ")}.`
         : "Fausse alerte : ces lignes sont légitimes et sans particularité ; c'est la règle qui se trompe.";
     view.innerHTML = `
       <a class="back" href="${esc(lastQueueHash)}">← Retour à la file d'alertes</a>
@@ -692,7 +692,7 @@
 
   // ============================================================ EXPLORATION
   const pct1f = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 });
-  const pct1 = (v) => (v === null || v === undefined ? "—" : pct1f.format(v));
+  const pct1 = (v) => (v === null || v === undefined ? "n.d." : pct1f.format(v));
   const nf2 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
   const alpha = (hex, a) => (/^#[0-9a-f]{6}$/i.test(hex) ? hex + Math.round(a * 255).toString(16).padStart(2, "0") : hex);
   const factor = (log2) => `×${nf2.format(Math.round(Math.pow(2, log2) * 100) / 100)}`;
@@ -874,7 +874,7 @@
       ${chartCard({
         id: "spread", cls: "section", title: "Dispersion des prix par acte",
         sub: "Pour chaque acte : la barre épaisse couvre la moitié centrale des prix (du 1er au 3e quartile), le trait fin 90 % des prix, le repère foncé la médiane. Échelle logarithmique. C'est cette dispersion qui fixe le seuil du scénario 1 : il doit rester au-dessus des écarts normaux.",
-        legend: legendHtml([{ cls: "acc", label: "50 % central (Q1–Q3)" }, { cls: "past", label: "90 % des prix (P5–P95)" }, { cls: "ref", label: "Médiane" }]),
+        legend: legendHtml([{ cls: "acc", label: "50 % central (Q1 à Q3)" }, { cls: "past", label: "90 % des prix (P5 à P95)" }, { cls: "ref", label: "Médiane" }]),
         height: 70 + 26 * P.price_spread.length, aria: "Boîtes horizontales de la distribution des prix pour chaque acte, en échelle logarithmique",
         table: dataTable(["Acte", "Lignes", "P5", "Q1", "Médiane", "Q3", "P95"], P.price_spread.map((r) => [r.label, nf.format(r.n), eur.format(r.p5), eur.format(r.q1), eur.format(r.median), eur.format(r.q3), eur.format(r.p95)])),
       })}
@@ -1014,7 +1014,7 @@
             callbacks: {
               label: (it) => {
                 const r = spread[it.dataIndex];
-                return [`Médiane : ${eur.format(r.median)}`, `Q1–Q3 : ${eur.format(r.q1)} – ${eur.format(r.q3)}`, `P5–P95 : ${eur.format(r.p5)} – ${eur.format(r.p95)}`, `${nf.format(r.n)} lignes`];
+                return [`Médiane : ${eur.format(r.median)}`, `Q1 à Q3 : ${eur.format(r.q1)} à ${eur.format(r.q3)}`, `P5 à P95 : ${eur.format(r.p5)} à ${eur.format(r.p95)}`, `${nf.format(r.n)} lignes`];
               },
             },
           },
@@ -1201,7 +1201,7 @@
     const top10 = H.rows.slice(0, 10).reduce((a, r) => a + r.total, 0);
     const allProviderAlerts = H.rows.reduce((a, r) => a + r.total, 0);
     const colLabel = { lines: "Lignes", median_ratio: "Prix médian / prix habituel", share_above_1_5: "Part des lignes ≥ ×1,5", alerts_per_100: "Alertes pour 100 lignes" };
-    const colFmt = { lines: (v) => nf.format(v), median_ratio: (v) => (v === null ? "—" : `×${nf2.format(v)}`), share_above_1_5: (v) => pct1(v), alerts_per_100: (v) => nf1.format(v) };
+    const colFmt = { lines: (v) => nf.format(v), median_ratio: (v) => (v === null ? "n.d." : `×${nf2.format(v)}`), share_above_1_5: (v) => pct1(v), alerts_per_100: (v) => nf1.format(v) };
     const scen = (r) => Object.entries(r.by_scenario).filter(([, n]) => n).map(([s, n]) => `${n} × scénario ${s}`).join(", ");
 
     view.innerHTML = `
@@ -1244,7 +1244,7 @@
       </section>
 
       <section class="card section" aria-labelledby="t-net">
-        <h2 id="t-net">Graphe adhérents – prestataires</h2>
+        <h2 id="t-net">Graphe adhérents et prestataires</h2>
         <p class="sub">${ns.shown_flagged} adhérents signalés par la règle de multiplication des prestataires (sur ${ns.flagged_members}) et ${ns.shown_contrast} adhérents fidèles très consommateurs, avec tous leurs généralistes, spécialistes et pharmacies de l'année.
         Un adhérent signalé voit en moyenne ${nf1.format(ns.mean_providers_flagged)} prestataires différents, ${nf1.format(ns.mean_visits_per_provider_flagged)} fois chacun ; un adhérent fidèle en voit ${nf1.format(ns.mean_providers_contrast)}, ${nf1.format(ns.mean_visits_per_provider_contrast)} fois chacun.</p>
         ${legendHtml([{ cls: "s3 dot", label: "Adhérent signalé (règle 3)" }, { cls: "dark dot", label: "Adhérent fidèle, non signalé" }, { cls: "past", label: "Prestataire (taille = nombre d'adhérents)" }, { cls: "s3 line", label: "Visite comprise dans l'alerte" }, { cls: "past line", label: "Autre visite (épaisseur = nombre de visites)" }])}
@@ -1904,7 +1904,7 @@
   }
 
   function pctCell(v) {
-    if (v === null || v === undefined) return "—";
+    if (v === null || v === undefined) return "n.d.";
     return `<span class="pct-cell"><span class="pct-bar" aria-hidden="true"><span style="width:${Math.round(v * 100)}%"></span></span>${pct(v)}</span>`;
   }
 
@@ -2066,9 +2066,9 @@
   const chatHistory = [];
   const SUGGESTIONS = [
     "Comment fonctionne la règle du prix gonflé ?",
-    "Pourquoi trier les alertes par montant ?",
+    "Quelles sont les alertes les plus coûteuses en mars ?",
     "Que montre le bilan économique ?",
-    "Pourquoi des règles plutôt qu'un modèle ?",
+    "Quelle est la précision de la règle des doublons ?",
   ];
   let chatEnabled = false;
   let chatChart = null;
@@ -2136,7 +2136,13 @@
         body: JSON.stringify({ question: q, chart_id: chatChart ? chatChart.id : null, history: chatHistory.slice(-6) }),
       });
       typing.remove();
-      addChatMessage("assistant", res.answer, res.facts, res.checked);
+      const el = addChatMessage("assistant", res.answer, res.facts, res.checked);
+      if (res.tools && res.tools.length) {
+        const used = document.createElement("span");
+        used.className = "msg-tools";
+        used.textContent = `Données consultées : ${res.tools.join(", ")}`;
+        el.append(used);
+      }
       chatHistory.push({ role: "user", text: q }, { role: "assistant", text: res.answer });
     } catch (e) {
       typing.remove();

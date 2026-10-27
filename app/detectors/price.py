@@ -1,4 +1,4 @@
-"""Scenario 1 — inflated price versus the usual price of the act.
+"""Scenario 1: inflated price versus the usual price of the act.
 
 The reference price of a line is the median billed amount of the same act
 over all claims dated STRICTLY BEFORE the line's date. Lines of the same day

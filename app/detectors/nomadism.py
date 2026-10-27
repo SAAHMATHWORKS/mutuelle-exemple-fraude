@@ -1,4 +1,4 @@
-"""Scenario 3 — provider multiplication ("nomadisme médical").
+"""Scenario 3: provider multiplication ("nomadisme médical").
 
 For each member and provider type (GP, specialist, pharmacy), count the
 providers seen in a 14-day window that the member had never used before the

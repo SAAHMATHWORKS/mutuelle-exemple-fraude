@@ -61,7 +61,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title=f"{INSURER_NAME} — détection de fraude par scénarios",
+    title=f"{INSURER_NAME} : détection de fraude par scénarios",
     description="Démo sur données entièrement synthétiques.",
     version="1.0.0",
     lifespan=lifespan,
@@ -507,8 +507,8 @@ chat_limiter = RateLimiter(per_client_seconds=4, global_per_minute=30)
 
 
 @app.post("/api/chat")
-def chat(body: ChatRequest, request: Request) -> JSONResponse:
-    """« Une question ? »: an answer from the server-side model, grounded on the demo's public facts."""
+async def chat(body: ChatRequest, request: Request) -> JSONResponse:
+    """« Une question ? »: a Pydantic AI agent answers from the demo's facts and read-only tools on its data."""
     if assistant is None:
         return JSONResponse({"detail": "Le chat n'est pas activé sur cette instance."}, status_code=503)
     client = (
@@ -527,7 +527,7 @@ def chat(body: ChatRequest, request: Request) -> JSONResponse:
     context = build_context(_dataset_meta(), rules_doc(), r.get_narratives(), body.chart_id)
     history = [t.model_dump() for t in body.history][-6:]
     try:
-        out = assistant.ask(body.question.strip(), history, context)
+        out = await assistant.ask(body.question.strip(), history, context, r)
     except ChatUnavailable:
         return JSONResponse(
             {"detail": "Le chat ne peut pas répondre pour le moment. La « Lecture IA » de chaque graphique reste disponible."},
