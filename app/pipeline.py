@@ -12,6 +12,7 @@ from app.detectors import coherence, duplicates, early_claim, nomadism, price
 from app.detectors.base import Alert
 from app.exploration import explore
 from app.generator import N_DAYS, Dataset
+from app.providers import analyse as analyse_providers
 
 
 @dataclass
@@ -25,6 +26,14 @@ class Result:
     claims_by_line: pd.DataFrame = field(repr=False, default=None)
     exploration: dict | None = field(repr=False, default=None)
     advanced: dict | None = field(repr=False, default=None)  # filled in the background by app.state
+    model: dict | None = field(repr=False, default=None)  # idem, after ``advanced``
+    providers: dict | None = field(repr=False, default=None)
+
+    def get_providers(self) -> dict:
+        """Provider heat maps and member-provider graph, computed on first use."""
+        if self.providers is None:
+            self.providers = analyse_providers(self.dataset, self.refs, self.alerts)
+        return self.providers
 
     def get_exploration(self) -> dict:
         """Exploratory aggregates, computed on first use and kept with this result."""

@@ -136,6 +136,8 @@
       else if (parts[0] === "alertes") { setNav("alerts"); lastQueueHash = location.hash; await renderQueue(params); }
       else if (parts[0] === "evaluation") { setNav("evaluation"); await renderEvaluation(); }
       else if (parts[0] === "exploration") { setNav("exploration"); await renderExploration(); }
+      else if (parts[0] === "prestataires") { setNav("providers"); await renderProviders(); }
+      else if (parts[0] === "modele") { setNav("model"); await renderModel(); }
       else { setNav("overview"); await renderOverview(); }
     } catch (e) {
       view.innerHTML = `<div class="card"><h1>Impossible de charger la page</h1><p class="error">${esc(e.message)}</p><p><a href="#/vue-ensemble">Revenir à la vue d'ensemble</a></p></div>`;
@@ -555,7 +557,7 @@
   };
   let pluginsRegistered = false;
   function registerPlugins() {
-    if (window.Chart && !pluginsRegistered) { Chart.register(refLinePlugin, pointLabelPlugin); pluginsRegistered = true; }
+    if (window.Chart && !pluginsRegistered) { Chart.register(refLinePlugin, pointLabelPlugin, edgesPlugin); pluginsRegistered = true; }
   }
 
   function dataTable(headers, rows, caption = "") {
@@ -966,6 +968,300 @@
         interaction: { mode: "index", intersect: false, axis: "y" },
         scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, border: { display: false }, title: { display: true, text: "Lignes incohérentes" } }, y: { stacked: true, grid: { display: false } } },
         plugins: { tooltip: { callbacks: { label: (it) => `${it.dataset.label} : ${nf.format(it.parsed.x)}`, footer: (items) => `${nf.format(sc.acts[items[0].dataIndex].lines)} lignes de cet acte au total` } } },
+      },
+    });
+  }
+
+  // ========================================================== PROVIDERS VIEW
+  const heatBg = (share, base = "var(--surface-2)") => `background:color-mix(in srgb, var(--accent) ${Math.round(Math.min(1, share) * 88)}%, ${base})`;
+  const complicitTag = '<span class="tag" title="Vérité injectée par le générateur ; les règles ne connaissent pas cette liste">complice injecté</span>';
+  const SHORT_SCEN = { 1: "1. Prix", 2: "2. Doublon", 3: "3. Prestataires", 4: "4. Incohérence", 5: "5. Précoce" };
+  const MONTH_START_DAYS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  const MONTHS_SHORT = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+
+  const edgesPlugin = {
+    id: "edges",
+    beforeDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.links) return;
+      const { ctx } = chart;
+      const sx = chart.scales.x;
+      const sy = chart.scales.y;
+      ctx.save();
+      ctx.lineCap = "round";
+      for (const l of opts.links) {
+        const a = opts.pos[l.source];
+        const b = opts.pos[l.target];
+        ctx.strokeStyle = l.in_alert ? alpha(opts.alertColor, 0.8) : alpha(opts.baseColor, 0.45);
+        ctx.lineWidth = l.in_alert ? 1.8 : Math.min(1 + 0.6 * (l.visits - 1), 5);
+        ctx.beginPath();
+        ctx.moveTo(sx.getPixelForValue(a.x), sy.getPixelForValue(a.y));
+        ctx.lineTo(sx.getPixelForValue(b.x), sy.getPixelForValue(b.y));
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+  };
+
+  async function renderProviders() {
+    registerPlugins();
+    const x = await api("/api/providers");
+    const H = x.heatmap;
+    const SC = x.scorecard;
+    const N = x.network;
+    const ns = N.summary;
+    const weekStart = (w) => { const d = new Date(2025, 0, 1 + w * 7); return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }); };
+    const top10 = H.rows.slice(0, 10).reduce((a, r) => a + r.total, 0);
+    const allProviderAlerts = H.rows.reduce((a, r) => a + r.total, 0);
+    const colLabel = { lines: "Lignes", median_ratio: "Prix médian / prix habituel", share_above_1_5: "Part des lignes ≥ ×1,5", alerts_per_100: "Alertes pour 100 lignes" };
+    const colFmt = { lines: (v) => nf.format(v), median_ratio: (v) => (v === null ? "—" : `×${nf2.format(v)}`), share_above_1_5: (v) => pct1(v), alerts_per_100: (v) => nf1.format(v) };
+    const scen = (r) => Object.entries(r.by_scenario).filter(([, n]) => n).map(([s, n]) => `${n} × scénario ${s}`).join(", ");
+
+    view.innerHTML = `
+      <div class="page-head"><div><h1>Prestataires et réseau</h1>
+        <p>Les règles jugent chaque ligne isolément. Ici, on agrège par prestataire et on regarde les liens entre adhérents et prestataires : deux angles que les règles n'exploitent pas encore.</p></div></div>
+      <section class="grid kpis" aria-label="Chiffres clés">
+        <div class="kpi"><div class="label">Prestataires avec au moins une alerte</div><div class="value">${nf.format(H.providers_with_alerts)}</div><div class="hint">sur ${nf.format(x.dataset.n_providers)} prestataires</div></div>
+        <div class="kpi"><div class="label">Alertes des 10 prestataires les plus signalés</div><div class="value">${nf.format(top10)}</div><div class="hint">${pct(top10 / Math.max(allProviderAlerts, 1))} des alertes des ${H.rows.length} premiers</div></div>
+        <div class="kpi"><div class="label">Complices injectés en tête du profil</div><div class="value">${SC.complicit_in_top} sur ${SC.complicit_total}</div><div class="hint">dans les ${SC.rows.length} premiers du tableau de profil</div></div>
+        <div class="kpi"><div class="label">Prestataires par adhérent signalé</div><div class="value">${nf1.format(ns.mean_providers_flagged)}</div><div class="hint">contre ${nf1.format(ns.mean_providers_contrast)} pour les adhérents fidèles</div></div>
+      </section>
+
+      <section class="card" aria-labelledby="t-hm">
+        <h2 id="t-hm">Alertes par prestataire et par semaine</h2>
+        <p class="sub">Les ${H.rows.length} prestataires qui reçoivent le plus d'alertes (hors scénario 3, qui implique plusieurs prestataires). Plus la case est foncée, plus il y a d'alertes cette semaine-là (maximum ${H.max}).
+        Les lignes régulièrement foncées toute l'année signalent un comportement durable, pas un accident.</p>
+        <p class="scroll-hint" aria-hidden="true">Faites glisser horizontalement pour voir toute l'année →</p>
+        <div class="hm-scroll"><div class="hm" style="--weeks:${H.weeks}" role="img" aria-label="Carte de chaleur des alertes par prestataire et par semaine">
+          <div class="hm-label hm-head"></div>
+          <div class="hm-months" aria-hidden="true">${MONTHS_SHORT.map((m, i) => `<span style="grid-column:${Math.floor(MONTH_START_DAYS[i] / 7) + 1}">${m}</span>`).join("")}</div>
+          <div class="hm-total hm-head">Total</div>
+          ${H.rows.map((r) => `
+            <div class="hm-label"><span class="mono">${esc(r.provider_id)}</span> <span class="muted">${esc(r.type)}</span>${r.complicit ? complicitTag : ""}</div>
+            <div class="hm-row">${r.counts.map((c, w) => `<span style="${c ? heatBg(c / Math.max(H.max, 1)) : ""}" title="${esc(r.provider_id)}, semaine du ${weekStart(w)} : ${c} alerte${c > 1 ? "s" : ""}"></span>`).join("")}</div>
+            <div class="hm-total num">${nf.format(r.total)}</div>`).join("")}
+        </div></div>
+        ${legendHtml([{ cls: "hm-0", label: "Aucune alerte" }, { cls: "hm-1", label: "1 alerte" }, { cls: "hm-max", label: `${H.max} alertes` }])}
+        ${dataTable(["Prestataire", "Type", "Complice injecté", "Alertes", "Détail par scénario"], H.rows.map((r) => [r.provider_id, r.type, r.complicit ? "oui" : "non", nf.format(r.total), scen(r)]))}
+      </section>
+
+      <section class="card section" aria-labelledby="t-sc">
+        <h2 id="t-sc">Profil de facturation des prestataires</h2>
+        <p class="sub">Classés par part de lignes facturées au moins 1,5 fois le prix habituel de l'acte. Chaque colonne a sa propre échelle : plus la case est foncée, plus le prestataire se classe haut parmi les ${nf.format(SC.eligible)} prestataires sur cet indicateur.
+        Les ${SC.complicit_total} complices injectés occupent ${SC.complicit_in_top === SC.complicit_total && SC.rows.slice(0, SC.complicit_total).every((r) => r.complicit) ? "exactement les premières places" : `${SC.complicit_in_top} des ${SC.rows.length} premières places`} : agréger par prestataire les repère, alors que la règle ligne à ligne ne voit qu'une suite d'alertes isolées.</p>
+        <div class="table-scroll"><table class="heat scorecard">
+          <thead><tr><th>Prestataire</th>${SC.columns.map((c) => `<th class="num">${esc(colLabel[c])}</th>`).join("")}</tr></thead>
+          <tbody>${SC.rows.map((r) => `<tr><th scope="row" class="rowh"><span class="mono">${esc(r.provider_id)}</span> <span class="muted">${esc(r.type)}</span>${r.complicit ? complicitTag : ""}</th>
+            ${SC.columns.map((c) => { const rk = r.rank[c] ?? 0; return `<td class="cell" style="${heatBg(rk * rk * 0.5, "var(--surface)")}">${colFmt[c](r[c])}</td>`; }).join("")}</tr>`).join("")}</tbody>
+        </table></div>
+      </section>
+
+      <section class="card section" aria-labelledby="t-net">
+        <h2 id="t-net">Graphe adhérents – prestataires</h2>
+        <p class="sub">${ns.shown_flagged} adhérents signalés par la règle de multiplication des prestataires (sur ${ns.flagged_members}) et ${ns.shown_contrast} adhérents fidèles très consommateurs, avec tous leurs généralistes, spécialistes et pharmacies de l'année.
+        Un adhérent signalé voit en moyenne ${nf1.format(ns.mean_providers_flagged)} prestataires différents, ${nf1.format(ns.mean_visits_per_provider_flagged)} fois chacun ; un adhérent fidèle en voit ${nf1.format(ns.mean_providers_contrast)}, ${nf1.format(ns.mean_visits_per_provider_contrast)} fois chacun.</p>
+        ${legendHtml([{ cls: "s3 dot", label: "Adhérent signalé (règle 3)" }, { cls: "dark dot", label: "Adhérent fidèle, non signalé" }, { cls: "past", label: "Prestataire (taille = nombre d'adhérents)" }, { cls: "s3 line", label: "Visite comprise dans l'alerte" }, { cls: "past line", label: "Autre visite (épaisseur = nombre de visites)" }])}
+        <div class="chart-wrap net-wrap"><canvas id="c-net" role="img" aria-label="Graphe des liens entre adhérents et prestataires"></canvas></div>
+        <p class="sub" style="margin-top:10px">Le générateur n'a pas injecté de réseau organisé : les ${nf.format(ns.shared_providers)} prestataires partagés par plusieurs adhérents le sont par hasard. Sur de vraies données, ce graphe servirait à chercher des communautés (un prestataire et un groupe d'adhérents qui se retrouvent toujours ensemble), ce que les règles actuelles ne font pas.</p>
+      </section>`;
+
+    // network
+    const pos = Object.fromEntries(N.nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+    const providerNodes = N.nodes.filter((n) => n.kind === "provider");
+    const flagged = N.nodes.filter((n) => n.kind === "member" && n.group === "flagged");
+    const contrast = N.nodes.filter((n) => n.kind === "member" && n.group === "contrast");
+    const surf = css("--surface");
+    makeChart(document.getElementById("c-net"), {
+      type: "scatter",
+      data: {
+        datasets: [
+          { label: "Prestataire", data: providerNodes.map((n) => ({ x: n.x, y: n.y, n })), pointStyle: "rect", backgroundColor: alpha(css("--text-3"), 0.85), borderColor: surf, borderWidth: 1, pointRadius: providerNodes.map((n) => 3 + 1.5 * n.degree), pointHoverRadius: providerNodes.map((n) => 5 + 1.5 * n.degree) },
+          { label: "Adhérent fidèle", data: contrast.map((n) => ({ x: n.x, y: n.y, n })), backgroundColor: css("--text"), borderColor: surf, borderWidth: 2, pointRadius: 7, pointHoverRadius: 9 },
+          { label: "Adhérent signalé", data: flagged.map((n) => ({ x: n.x, y: n.y, n })), backgroundColor: seriesColor(3), borderColor: surf, borderWidth: 2, pointRadius: 7, pointHoverRadius: 9 },
+        ],
+      },
+      options: {
+        layout: { padding: 14 },
+        scales: { x: { display: false, min: -0.02, max: 1.02 }, y: { display: false, min: -0.02, max: 1.02 } },
+        plugins: {
+          edges: { links: N.links, pos, alertColor: seriesColor(3), baseColor: css("--text-3") },
+          tooltip: {
+            callbacks: {
+              title: (items) => items[0].raw.n.id,
+              label: (it) => {
+                const n = it.raw.n;
+                if (n.kind === "provider") return `${n.ptype}, ${n.degree} adhérent${n.degree > 1 ? "s" : ""} de ce graphe`;
+                return `${n.group === "flagged" ? "Signalé par la règle 3" : "Fidèle, non signalé"} : ${n.degree} prestataires, ${n.visits} visites${n.injected ? " (fraude injectée)" : ""}`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  // ============================================================== MODEL VIEW
+  async function renderModel() {
+    registerPlugins();
+    const m = await api("/api/model");
+    if (m.status === "computing") {
+      view.innerHTML = `<div class="page-head"><div><h1>Modèle non supervisé</h1></div></div><section class="card"><p class="loading">Entraînement de l'Isolation Forest en cours (quelques secondes après chaque génération)… la page s'affichera seule.</p></section>`;
+      pollTimer = setTimeout(() => { if (parseHash().parts[0] === "modele") route(); }, 2000);
+      return;
+    }
+    if (m.status !== "ready") { view.innerHTML = `<section class="card"><h1>Modèle non supervisé</h1><p class="error">Le calcul a échoué.</p></section>`; return; }
+    const R = m.rules;
+    const MT = m.models.metier;
+    const BR = m.models.brutes;
+    const o = m.overlap;
+    const scenLabels = meta ? meta.scenarios : (await ensureMeta()).scenarios;
+    const keys = ["1", "2", "3", "4", "5"];
+    const series = [
+      { label: "Règles (système actuel)", cls: "acc", color: css("--accent"), at: R },
+      { label: "Isolation Forest, variables métier", cls: "alt", color: css("--alt"), at: MT.at_budget },
+      { label: "Isolation Forest, variables brutes", cls: "past", color: alpha(css("--text-3"), 0.7), at: BR.at_budget },
+    ];
+    const chips = (fs) => fs.map((f) => `<span class="feat">${esc(f.label)}</span>`).join("");
+    const truthLabel = (t) => (t ? `Fraude, scénario ${t}` : "Légitime");
+
+    view.innerHTML = `
+      <div class="page-head"><div><h1>Modèle non supervisé</h1>
+        <p>Un Isolation Forest note chaque ligne selon sa facilité à être isolée des autres, sans jamais voir les étiquettes de fraude. Il est comparé aux règles <strong>à charge de travail égale</strong> : il signale autant de lignes (${nf.format(m.budget)}) que les cinq règles réunies.
+        Il est présenté en comparaison seulement : les alertes de la démo restent celles des règles.</p></div></div>
+      <section class="grid kpis" aria-label="Rappel à charge égale">
+        ${series.map((s) => `<div class="kpi"><div class="label">${esc(s.label)}</div><div class="value">${pct(s.at.recall)}</div><div class="hint">des lignes frauduleuses retrouvées ; précision ${pct(s.at.precision)}</div></div>`).join("")}
+        <div class="kpi"><div class="label">Fraudes vues par le modèle seul</div><div class="value">${nf.format(o.fraud_model_only)}</div><div class="hint">lignes frauduleuses qu'aucune règle ne signale</div></div>
+      </section>
+
+      <div class="grid halves">
+        ${chartCard({
+          id: "m-recall", title: "Rappel par scénario, à charge de travail égale",
+          sub: "Part des lignes injectées de chaque scénario retrouvées par chaque approche, avec le même nombre de lignes signalées.",
+          legend: legendHtml(series.map((s) => ({ cls: s.cls, label: s.label }))), height: 300,
+          aria: "Barres groupées du rappel par scénario pour les règles et les deux variantes du modèle",
+          table: dataTable(["Scénario", ...series.map((s) => s.label)], keys.map((k) => [`${k}. ${scenLabels[k]}`, ...series.map((s) => pct1(s.at.recall_by_scenario[k]))])),
+        })}
+        ${chartCard({
+          id: "m-pr", title: "Précision et rappel selon le nombre de lignes signalées",
+          sub: "Chaque courbe parcourt les lignes de la plus à la moins anormale. Le point bleu est le système de règles : à son niveau de rappel, le modèle est bien moins précis.",
+          legend: legendHtml([{ cls: "acc dot", label: "Règles" }, { cls: "alt", label: "Variables métier" }, { cls: "past", label: "Variables brutes" }]), height: 300,
+          aria: "Courbes précision-rappel des deux variantes du modèle et point des règles",
+          table: dataTable(["Lignes signalées", "Métier : précision", "Métier : rappel", "Brutes : précision", "Brutes : rappel"], MT.pr.map((p, i) => [nf.format(p.k), pct1(p.precision), pct1(p.recall), pct1(BR.pr[i]?.precision), pct1(BR.pr[i]?.recall)])),
+        })}
+      </div>
+
+      <section class="card section" aria-labelledby="t-feat">
+        <h2 id="t-feat">Ce que le modèle voit</h2>
+        <div class="grid halves">
+          <div><h3>Variables brutes</h3><p class="sub">Disponibles sans aucune connaissance de la fraude.</p><p class="feats">${chips(BR.features)}</p></div>
+          <div><h3>Variables métier</h3><p class="sub">Les signaux des règles, calculés sans les étiquettes.</p><p class="feats">${chips(MT.features)}</p></div>
+        </div>
+        <p class="sub" style="margin-top:12px">Le saut de ${pct(BR.at_budget.recall)} à ${pct(MT.at_budget.recall)} de rappel vient des variables, pas de l'algorithme : c'est la connaissance du métier, encodée en variables, qui fait le travail.</p>
+      </section>
+
+      <div class="grid halves section">
+        <section class="card" aria-labelledby="t-ov">
+          <h2 id="t-ov">Qui trouve quoi ?</h2>
+          <p class="sub">Lignes frauduleuses et lignes légitimes signalées, selon qu'elles le sont par les règles, par le modèle (variables métier) ou par les deux.</p>
+          <h3 class="mini-title">Lignes frauduleuses (${nf.format(m.n_fraud)})</h3>
+          <div class="tiles">
+            <div class="tile"><div class="label">Les deux</div><div class="value">${nf.format(o.fraud_both)}</div></div>
+            <div class="tile"><div class="label">Règles seules</div><div class="value">${nf.format(o.fraud_rules_only)}</div></div>
+            <div class="tile"><div class="label">Modèle seul</div><div class="value">${nf.format(o.fraud_model_only)}</div></div>
+            <div class="tile"><div class="label">Personne</div><div class="value">${nf.format(o.fraud_neither)}</div></div>
+          </div>
+          <h3 class="mini-title">Lignes légitimes signalées à tort</h3>
+          <div class="tiles three">
+            <div class="tile"><div class="label">Les deux</div><div class="value">${nf.format(o.legit_both)}</div></div>
+            <div class="tile"><div class="label">Règles seules</div><div class="value">${nf.format(o.legit_rules_only)}</div></div>
+            <div class="tile"><div class="label">Modèle seul</div><div class="value">${nf.format(o.legit_model_only)}</div></div>
+          </div>
+        </section>
+        ${chartCard({
+          id: "m-hist", title: "Score d'anomalie : légitime contre fraude injectée",
+          sub: `Variables métier. Chaque barre regroupe ${pct(1 / MT.score_hist.legit_share.length)} des lignes, des moins aux plus anormales, et chaque groupe est ramené à 100 %. ${pct(MT.score_hist.fraud_share.slice(-3).reduce((a, b) => a + b, 0))} des fraudes tombent dans les 10 % de scores les plus élevés, le reste se mêle aux lignes légitimes.`,
+          legend: legendHtml([{ cls: "past", label: "Lignes légitimes" }, { cls: "ink", label: "Lignes frauduleuses" }]), height: 260,
+          aria: "Histogrammes comparés du score d'anomalie",
+          table: dataTable(["Score de", "à", "Légitime", "Fraude"], MT.score_hist.legit_share.map((v, i) => [nf2.format(MT.score_hist.edges[i]), nf2.format(MT.score_hist.edges[i + 1]), pct1(v), pct1(MT.score_hist.fraud_share[i])])),
+        })}
+      </div>
+
+      <section class="card section" aria-labelledby="t-ex">
+        <h2 id="t-ex">Les dix lignes les plus anormales selon le modèle</h2>
+        <p class="sub">Le modèle donne un score, pas une raison. La colonne « le plus inhabituel » est une aide de lecture (la variable la plus éloignée de la médiane), pas une explication du modèle : c'est la limite principale pour un gestionnaire.</p>
+        <div class="table-scroll"><table class="responsive">
+          <thead><tr><th>Date</th><th>Acte</th><th class="num">Montant</th><th class="num">Score</th><th>Le plus inhabituel</th><th>Signalée par les règles</th><th>Vérité injectée</th></tr></thead>
+          <tbody>${m.examples.map((e) => `<tr>
+            <td data-label="Date">${dateLong(e.date)}</td><td data-label="Acte">${esc(e.act)}</td><td data-label="Montant" class="num">${eur.format(e.amount)}</td>
+            <td data-label="Score" class="num">${nf2.format(e.score)}</td><td data-label="Le plus inhabituel">${esc(e.most_unusual)}</td>
+            <td data-label="Signalée par les règles">${e.flagged_by_rules ? "oui" : "non"}</td><td data-label="Vérité injectée">${e.truth ? scenarioHtml(e.truth, truthLabel(e.truth)) : "Légitime"}</td></tr>`).join("")}</tbody></table></div>
+      </section>
+
+      <section class="callout honest section" aria-labelledby="t-why">
+        <h2 id="t-why">Pourquoi les règles restent le système principal</h2>
+        <ul>
+          <li><strong>À charge égale, elles retrouvent plus.</strong> ${pct(R.recall)} des lignes frauduleuses contre ${pct(MT.at_budget.recall)} pour le meilleur modèle, avec une précision de ${pct(R.precision)} contre ${pct(MT.at_budget.precision)}.</li>
+          <li><strong>Elles disent pourquoi.</strong> Chaque alerte a une raison, des lignes de preuve et une décision ; un score d'anomalie n'en a pas.</li>
+          <li><strong>Le modèle dépend des variables.</strong> Sans variables métier, il retrouve surtout les soins chers et rares, pas la fraude.</li>
+          <li><strong>Mais il a un rôle.</strong> Il voit ${nf.format(o.fraud_model_only)} fraudes qu'aucune règle ne voit : examiner ses lignes les plus anormales hors alertes est une bonne façon de découvrir de nouveaux scénarios, à transformer ensuite en règles.</li>
+          <li><strong>Limite de cette comparaison.</strong> Le modèle est entraîné sur toute l'année d'un coup ; en production, on l'entraînerait sur le passé pour noter le présent. Les fraudes sont injectées : ces scores ne mesurent pas une performance réelle.</li>
+        </ul>
+      </section>`;
+
+    makeChart(document.getElementById("c-m-recall"), {
+      type: "bar",
+      data: {
+        labels: keys.map((k) => SHORT_SCEN[k]),
+        datasets: series.map((s) => ({ label: s.label, data: keys.map((k) => s.at.recall_by_scenario[k]), backgroundColor: s.color, borderRadius: 3, borderSkipped: "start", maxBarThickness: 18, categoryPercentage: 0.8, barPercentage: 0.9 })),
+      },
+      options: {
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false } },
+          y: { min: 0, max: 1, ticks: { callback: (v) => pct(v), stepSize: 0.25 }, border: { display: false } },
+        },
+        plugins: { tooltip: { callbacks: { title: (items) => `${keys[items[0].dataIndex]}. ${scenLabels[keys[items[0].dataIndex]]}`, label: (it) => `${it.dataset.label} : ${pct1(it.parsed.y)}` } } },
+      },
+    });
+
+    makeChart(document.getElementById("c-m-pr"), {
+      type: "scatter",
+      data: {
+        datasets: [
+          { type: "line", label: "Variables métier", data: MT.pr.map((p) => ({ x: p.recall, y: p.precision, k: p.k })), borderColor: css("--alt"), backgroundColor: css("--alt"), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+          { type: "line", label: "Variables brutes", data: BR.pr.map((p) => ({ x: p.recall, y: p.precision, k: p.k })), borderColor: alpha(css("--text-3"), 0.9), backgroundColor: css("--text-3"), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+          { label: "Règles", data: [{ x: R.recall, y: R.precision, k: m.budget }], backgroundColor: css("--accent"), borderColor: css("--surface"), borderWidth: 2, pointRadius: 8, pointHoverRadius: 10 },
+        ],
+      },
+      options: {
+        interaction: { mode: "nearest", intersect: false },
+        scales: {
+          x: { min: 0, max: 1, title: { display: true, text: "Rappel" }, ticks: { callback: (v) => pct(v), stepSize: 0.25 }, grid: { display: false } },
+          y: { min: 0, max: 1, title: { display: true, text: "Précision" }, ticks: { callback: (v) => pct(v), stepSize: 0.25 }, border: { display: false } },
+        },
+        plugins: {
+          pointLabels: { items: [{ dataset: 2, index: 0, text: `Règles (${nf.format(m.budget)} lignes)` }] },
+          tooltip: { callbacks: { title: (items) => `${nf.format(items[0].raw.k)} lignes signalées`, label: (it) => `${it.dataset.label} : précision ${pct1(it.parsed.y)}, rappel ${pct1(it.parsed.x)}` } },
+        },
+      },
+    });
+
+    const hist = MT.score_hist;
+    makeChart(document.getElementById("c-m-hist"), {
+      type: "bar",
+      data: {
+        labels: hist.legit_share.map((_, i) => `${Math.round((100 * i) / hist.legit_share.length)} %`),
+        datasets: [
+          { label: "Légitime", data: hist.legit_share, backgroundColor: alpha(css("--text-3"), 0.6), borderRadius: 2, borderSkipped: "start", categoryPercentage: 0.9, barPercentage: 0.9 },
+          { label: "Fraude", data: hist.fraud_share, backgroundColor: css("--chart-ref"), borderRadius: 2, borderSkipped: "start", categoryPercentage: 0.9, barPercentage: 0.9 },
+        ],
+      },
+      options: {
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { grid: { display: false }, title: { display: true, text: "Centile du score d'anomalie, du plus normal au plus anormal" }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 10 } },
+          y: { beginAtZero: true, ticks: { callback: (v) => pct(v) }, border: { display: false } },
+        },
+        plugins: { tooltip: { callbacks: { title: (items) => `Centiles ${Math.round((100 * items[0].dataIndex) / hist.legit_share.length)} à ${Math.round((100 * (items[0].dataIndex + 1)) / hist.legit_share.length)} (score ${nf2.format(hist.edges[items[0].dataIndex])} à ${nf2.format(hist.edges[items[0].dataIndex + 1])})`, label: (it) => `${it.dataset.label} : ${pct1(it.parsed.y)} du groupe` } } },
       },
     });
   }

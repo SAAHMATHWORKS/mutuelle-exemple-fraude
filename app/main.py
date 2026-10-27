@@ -318,6 +318,23 @@ def evaluation_advanced() -> dict:
     return {"status": "ready", "dataset": _dataset_meta(), **adv}
 
 
+@app.get("/api/providers")
+def providers_view() -> dict:
+    r = state.current()
+    return {"dataset": _dataset_meta(), **r.get_providers()}
+
+
+@app.get("/api/model")
+def model_view() -> dict:
+    r = state.current()
+    m = r.model
+    if m is None:
+        return {"status": "computing"}
+    if "error" in m:
+        return {"status": "error", "error": m["error"]}
+    return {"status": "ready", "dataset": _dataset_meta(), **m}
+
+
 @app.get("/api/exploration")
 def exploration() -> dict:
     r = state.current()

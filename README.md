@@ -42,7 +42,7 @@ A claims handler cannot review 20,000 lines. They need a short queue in which ev
 | 4 | **Diagnosis / act incoherence** | An act unrelated to the diagnosis, for example glasses for back pain | A rules table lists the diagnosis groups that go with each act; anything outside it is flagged | Ask for medical justification, or no action below 25 € |
 | 5 | **Very early claim** | A costly claim right after the policy starts | A costly act or ≥ 150 € within 30 days of the start date (high severity within 7 days) | Check the start date and the enrolment declaration |
 
-Each alert carries a severity, a one-sentence reason in French, the evidence rows (flagged lines and context lines) and a suggested decision. There are no black-box models, only rules and simple statistics.
+Each alert carries a severity, a one-sentence reason in French, the evidence rows (flagged lines and context lines) and a suggested decision. Alerts come only from rules and simple statistics; an unsupervised model is shown on a separate page, as a comparison.
 
 ## Architecture
 
@@ -59,7 +59,10 @@ flowchart LR
     D1 & D2 & D3 & D4 & D5 --> A["Alerts<br/>reason, evidence, decision"]
     A --> E["Evaluation vs injected labels"]
     G -. "5 noise levels, background thread" .-> N["Noise curve"]
-    A & E & N --> API["JSON API"]
+    A -. "background thread" .-> T["Threshold sweeps,<br/>confusion, gain curves"]
+    C & R -. "background thread" .-> M["Isolation Forest<br/>(comparison only)"]
+    C & A --> X["Exploration, provider<br/>profiles, member-provider graph"]
+    A & E & N & T & M & X --> API["JSON API"]
   end
   API --> UI["Static French UI<br/>(vanilla JS + vendored Chart.js)"]
 ```
@@ -71,6 +74,8 @@ flowchart LR
 | `GET /api/alerts` | Queue with filters (`scenario`, `severity`, `decision`, `q`, `date_from`, `date_to`), sorting and pagination (≤ 100 per page) |
 | `GET /api/alerts/{id}` | Full explanation, evidence rows, price chart data, ground truth (demo only) |
 | `GET /api/evaluation/advanced` | Threshold sweeps (precision and recall of each rule re-run with other thresholds), confusion matrices, gain curves and precision by severity. Computed in the background after each (re)generation; returns `{"status": "computing"}` until ready |
+| `GET /api/providers` | Alerts per provider and week, provider billing profile, member-provider graph (layout computed server-side) |
+| `GET /api/model` | Isolation Forest compared with the rules at the same workload. Computed in the background; `{"status": "computing"}` until ready |
 | `GET /api/exploration` | Exploratory aggregates: amount distribution, price spread per act, seasonality, daily volume, provider mix, Lorenz curves, age versus spend, and each scenario's signal split into legitimate lines and injected fraud |
 | `GET /api/evaluation` | Per-scenario recall and precision, false alerts per day, alert volume per day, and the noise curve |
 | `POST /api/regenerate` | New dataset: `seed`, `size` (2,000 to 50,000) and `noise_level` (0 to 1). Limited to 1 call per 15 s per client and 6 per minute overall. |
@@ -80,6 +85,8 @@ The code is organised as follows:
 - `app/detectors/` holds one module per scenario.
 - `app/pipeline.py` runs the detectors and evaluates them.
 - `app/advanced_eval.py` computes the threshold sweeps, confusion matrices and gain curves.
+- `app/providers.py` computes the provider heat maps and the member-provider graph.
+- `app/model_compare.py` trains the Isolation Forest and compares it with the rules.
 - `app/exploration.py` computes the exploratory analysis shown in the "Exploration des données" view.
 - `app/main.py` serves the API.
 - `app/static/` holds the UI.
@@ -178,6 +185,26 @@ The **Évaluation** page goes beyond one recall and one precision per rule:
 - **Gain curve.** It shows how much of the injected fraud a handler recovers after N alerts, depending on how the queue is sorted. With one alert a day (365 a year), sorting by amount recovers 75 % of the fraudulent euros, against 58 % for severity then amount and 36 % for arrival order.
 - **Severity check.** 92 % of high-severity alerts are right, against 41 % of low-severity ones. Severity ranks reliability, not money.
 
+## Providers and network view
+
+The rules judge each line on its own. The **Prestataires et réseau** page looks at two angles they do not use yet:
+
+- **Alerts per provider and week** (heat map). A provider that is dark all year shows lasting behaviour, not an accident.
+- **Billing profile per provider** (heat-map table, one colour scale per column): price level against the point-in-time reference, share of lines at 1.5× or more, alert rate. The generator routed part of the inflated prices through six "complicit" providers. Ranked by share of high prices, they take exactly the first six places, so aggregating per provider finds them, while the line-level rule only sees a series of separate alerts.
+- **Member-provider graph** (layout computed with networkx). Flagged members see about ten providers once each; busy but loyal members see two or three providers about five times each. The generator injected no organised ring, and the page says so: on real data, this graph would be used to look for communities.
+
+## Unsupervised model (comparison only)
+
+The **Modèle non supervisé** page trains an Isolation Forest (scikit-learn, 200 trees) without labels and compares it with the rules **at the same workload**: it flags as many lines as the five rules together (1,184 on the default data).
+
+| Approach | Recall | Precision |
+|---|---:|---:|
+| Rules (the system used for alerts) | 91 % | 73 % |
+| Isolation Forest, domain features (the rules' signals, computed without labels) | 61 % | 49 % |
+| Isolation Forest, raw features (amount, act rarity, age, provider volume, day) | 31 % | 25 % |
+
+The jump from 31 % to 61 % comes from the features, not the algorithm. The model also finds 8 fraudulent lines that no rule flags. That makes it a useful discovery tool for new scenarios, but not a replacement: it gives a score, not a reason a claims handler can act on. It is trained on the whole year at once; a real deployment would train on the past and score the present.
+
 ## Roadmap
 
 The project is being extended in stages, each one tested before the next:
@@ -185,7 +212,7 @@ The project is being extended in stages, each one tested before the next:
 1. ~~Clean repository with CI~~ (done)
 2. ~~"Exploration des données" view: distributions, seasonality, concentration and fraud-versus-legitimate charts~~ (done)
 3. ~~Deeper evaluation: precision-recall curves per threshold, confusion matrices, gain curve for the handler's queue~~ (done)
-4. Provider heatmaps, a member–provider network graph, and an unsupervised model shown *only as a comparison* with the rules
+4. ~~Provider heatmaps, a member–provider network graph, and an unsupervised model shown *only as a comparison* with the rules~~ (done)
 5. Self-hosted deployment behind Nginx, isolated from other services on the same server
 
 ## Limits (please read)
@@ -194,7 +221,7 @@ The project is being extended in stages, each one tested before the next:
 - Fraud is about 5 % of lines here, far more than in real portfolios. With realistic prevalence, precision would be much lower for the same rules.
 - Thresholds (2×, 1 day, 14 days, 30 days, 150 €) were chosen by hand on this data, with no separate validation period.
 - "New provider" and the price reference both depend on available history: early in the year, references are missing and every provider looks new.
-- The rules are independent. There is no combined score, no link analysis between members and providers, and no learning from handler decisions.
+- The rules are independent. There is no combined score, no learning from handler decisions, and the provider profiles and member-provider graph are shown for analysis but not used by any rule.
 - The decision buttons are not a workflow: nothing is saved on the server.
 
 The **Évaluation** page repeats these weaknesses rule by rule in a box titled "Ce qui ne marche pas".
@@ -210,8 +237,10 @@ Démo de **détection de fraude santé par scénarios** pour un assureur fictif,
 
 Une règle par scénario lève des alertes. Chacune explique en une phrase pourquoi elle a été levée, montre les lignes concernées et propose une décision au gestionnaire. Le prix de référence n'utilise que des factures antérieures, et un test le prouve.
 
-L'interface en français propose cinq vues :
+L'interface en français propose sept vues :
 - une vue d'ensemble ;
+- les prestataires et le réseau : alertes par prestataire et par semaine, profil de facturation, graphe adhérents–prestataires ;
+- un modèle non supervisé (Isolation Forest) comparé aux règles à charge de travail égale, en simple comparaison ;
 - une exploration des données en douze graphiques (distribution des montants, dispersion des prix, saisonnalité, concentration, et pour chaque scénario la variable sur laquelle porte la règle) ;
 - la file d'alertes ;
 - le détail d'une alerte ;

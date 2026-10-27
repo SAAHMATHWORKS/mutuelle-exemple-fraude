@@ -58,6 +58,8 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/evaluation
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/exploration
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/evaluation/advanced
+          curl -fsS -o /dev/null http://127.0.0.1:7860/api/providers
+          curl -fsS -o /dev/null http://127.0.0.1:7860/api/model
 
       - name: Show server log on failure
         if: failure()
@@ -103,6 +105,8 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:8080/api/evaluation
           curl -fsS -o /dev/null http://127.0.0.1:8080/api/exploration
           curl -fsS -o /dev/null http://127.0.0.1:8080/api/evaluation/advanced
+          curl -fsS -o /dev/null http://127.0.0.1:8080/api/providers
+          curl -fsS -o /dev/null http://127.0.0.1:8080/api/model
           uid=$(docker exec demo id -u)
           echo "container uid: $uid"
           [ "$uid" != "0" ]

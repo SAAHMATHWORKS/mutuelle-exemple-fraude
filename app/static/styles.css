@@ -292,3 +292,36 @@ table.heat th.rowh, table.heat thead th:first-child { position: sticky; left: 0;
   table.heat td.cell { min-width: 56px; }
 }
 table.heat .chip { white-space: normal; }
+
+/* ----- providers & model ----- */
+.tag { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; color: var(--text); border: 1px solid var(--text-3); white-space: nowrap; }
+.swatch.dark { background: var(--text); }
+.swatch.ink { background: var(--chart-ref); }
+.swatch.line { height: 3px; width: 16px; border-radius: 2px; }
+.swatch.hm-0 { background: var(--surface-2); border: 1px solid var(--border); }
+.swatch.hm-1 { background: color-mix(in srgb, var(--accent) 22%, var(--surface-2)); }
+.swatch.hm-max { background: color-mix(in srgb, var(--accent) 88%, var(--surface-2)); }
+.hm-scroll { overflow-x: auto; margin: 4px 0 10px; }
+.hm { display: grid; grid-template-columns: minmax(190px, max-content) minmax(calc(var(--weeks) * 9px), 1fr) 48px; gap: 2px 10px; align-items: center; min-width: 640px; font-size: 0.8rem; }
+.hm-head { color: var(--text-3); font-size: 0.75rem; }
+.hm-months { display: grid; grid-template-columns: repeat(var(--weeks), 1fr); color: var(--text-3); font-size: 0.72rem; }
+.hm-months span { white-space: nowrap; }
+.hm-row { display: grid; grid-template-columns: repeat(var(--weeks), 1fr); gap: 1px; height: 16px; }
+.hm-row span { background: var(--surface-2); border-radius: 2px; }
+.hm-label { white-space: nowrap; }
+.hm-total { text-align: right; font-weight: 600; }
+table.scorecard th.rowh { white-space: nowrap; }
+.net-wrap { height: 520px; }
+@media (max-width: 640px) { .net-wrap { height: 380px; } .hm-label .muted { display: none; } .hm { grid-template-columns: max-content minmax(calc(var(--weeks) * 8px), 1fr) 36px; } }
+.feats { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.feat { font-size: 0.8rem; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); }
+.mini-title { font-size: 0.9rem; margin: 14px 0 8px; color: var(--text-2); }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tile { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.tile .label { font-size: 0.78rem; color: var(--text-2); }
+.tile .value { font-size: 1.3rem; font-weight: 650; }
+@media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.hm-label, .hm-head.hm-label { position: sticky; left: 0; background: var(--surface); z-index: 1; padding-right: 6px; }
+.scroll-hint { display: none; font-size: 0.78rem; color: var(--text-3); margin: 0 0 4px; }
+@media (max-width: 640px) { .scroll-hint { display: block; } }

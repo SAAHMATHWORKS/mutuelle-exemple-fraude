@@ -10,6 +10,7 @@ from collections import deque
 
 from app.advanced_eval import advanced
 from app.generator import DEFAULT_SEED, DEFAULT_SIZE, generate
+from app.model_compare import compare
 from app.pipeline import Result, run
 
 CURVE_LEVELS = (0.0, 0.25, 0.5, 0.75, 1.0)
@@ -45,6 +46,10 @@ class AppState:
             result.advanced = advanced(result.dataset.claims, result.refs, result.alerts)
         except Exception as exc:  # pragma: no cover - defensive
             result.advanced = {"error": str(exc)}
+        try:
+            result.model = compare(result.dataset, result.refs, result.alerts)
+        except Exception as exc:  # pragma: no cover - defensive
+            result.model = {"error": str(exc)}
 
     def current(self) -> Result:
         if self.result is None:
