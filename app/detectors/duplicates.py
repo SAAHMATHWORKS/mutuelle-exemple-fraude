@@ -1,4 +1,4 @@
-"""Scenario 2 — double billing or split billing.
+"""Scenario 2: double billing or split billing.
 
 Lines of the same member, provider and act are grouped into clusters when
 they are at most ``MAX_GAP_DAYS`` apart. Acts that are legitimately repeated

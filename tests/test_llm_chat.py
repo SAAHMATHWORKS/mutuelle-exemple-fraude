@@ -1,34 +1,50 @@
-"""« Une question ? » chat: configuration, request shape, number check, budget, real HTTP round trip."""
+"""« Une question ? » chat: configuration, tools, number check and the Pydantic AI agent (test models)."""
 
+import asyncio
 import json
 
-from app.llm_chat import UNCHECKED_ANSWER, ChatAssistant, ChatUnavailable, Config, build_context, build_request, stray_numbers
+import pytest
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.test import TestModel
+
+from app.generator import generate
+from app.llm_chat import (
+    TOO_BROAD_ANSWER,
+    UNCHECKED_ANSWER,
+    ChatAssistant,
+    ChatDeps,
+    ChatUnavailable,
+    Config,
+    alert_detail,
+    build_context,
+    build_model,
+    provider_profile,
+    scenario_figures,
+    search_alerts,
+    stray_numbers,
+)
+from app.pipeline import run
 
 ENV = {"LLM_PROVIDER": "openai", "LLM_API_KEY": "test-key-not-real", "LLM_MODEL": "some-model"}
 CONTEXT = "Avec 365 alertes, trier par montant retrouve 75 % des euros. Règle de prix : alerte à partir de 2 fois le prix."
 
 
-def openai_reply(text):
-    return {"choices": [{"message": {"content": text}}]}
+@pytest.fixture(scope="module")
+def result():
+    return run(generate(seed=42, size=4000))
 
 
-class FakeTransport:
-    def __init__(self, *replies):
-        self.replies = list(replies)
-        self.calls = []
-
-    def __call__(self, url, headers, body, timeout):
-        self.calls.append((url, headers, body))
-        reply = self.replies.pop(0)
-        if isinstance(reply, Exception):
-            raise reply
-        return reply
+def ask(model, result, question="Question ?", history=(), **env):
+    bot = ChatAssistant(Config.from_env({**ENV, **env}), model=model)
+    return bot, asyncio.run(bot.ask(question, list(history), CONTEXT, result))
 
 
-def assistant(transport, **env):
-    return ChatAssistant(Config.from_env({**ENV, **env}), transport=transport)
+def tool_returns(messages):
+    return [p for m in messages for p in getattr(m, "parts", []) if isinstance(p, ToolReturnPart)]
 
 
+# ------------------------------------------------------------------ configuration
 def test_off_without_full_configuration():
     assert Config.from_env({}) is None
     assert Config.from_env({"LLM_PROVIDER": "static"}) is None
@@ -40,88 +56,39 @@ def test_off_without_full_configuration():
     assert ChatAssistant.from_env({}) is None
 
 
-def test_key_only_travels_in_a_header():
+def test_models_of_both_providers_build_and_hide_the_key():
     for provider in ("openai", "anthropic"):
-        cfg = Config.from_env({**ENV, "LLM_PROVIDER": provider})
-        url, headers, body = build_request(cfg, "consignes", [{"role": "user", "content": "question"}])
-        assert url.startswith("https://") and "test-key-not-real" not in url
-        assert "test-key-not-real" in json.dumps(headers)
-        assert "test-key-not-real" not in json.dumps(body)
-        assert body["model"] == "some-model"
-    assert "test-key-not-real" not in json.dumps(ChatAssistant.from_env(ENV).source)
+        model = build_model(Config.from_env({**ENV, "LLM_PROVIDER": provider}))
+        assert type(model).__name__ == {"openai": "OpenAIChatModel", "anthropic": "AnthropicModel"}[provider]
+    bot = ChatAssistant.from_env(ENV)
+    assert "test-key-not-real" not in json.dumps(bot.source)
 
 
+# ------------------------------------------------------------------ tools and number check
 def test_number_check():
     assert stray_numbers("365 alertes et 75 % des euros, seuil 2 fois.", [CONTEXT]) == []
     assert stray_numbers("En 2025, 80 % des alertes.", [CONTEXT]) == ["2025", "80 %"]
     assert stray_numbers("Avec 60 € par alerte.", [CONTEXT, "Et si une alerte coûtait 60 € ?"]) == []
 
 
-def test_grounded_answer_is_returned():
-    fake = FakeTransport(openai_reply("Avec 365 alertes, le tri par montant retrouve 75 % des euros."))
-    out = assistant(fake).ask("Pourquoi trier par montant ?", [], CONTEXT)
-    assert out["checked"] and out["answer"].startswith("Avec 365") and set(out["facts"]) == {"365", "75 %"}
-    system = fake.calls[0][2]["messages"][0]["content"]
-    assert "CONTEXTE" in system and "365 alertes" in system
-
-
-def test_invented_number_is_retried_then_replaced():
-    fake = FakeTransport(openai_reply("En 2025, 80 % des euros."), openai_reply("Environ 90 % des euros."))
-    bot = assistant(fake)
-    out = bot.ask("Combien ?", [], CONTEXT)
-    assert out == {"answer": UNCHECKED_ANSWER, "facts": [], "checked": False}
-    assert len(fake.calls) == 2 and bot.rejected == 2
-    assert "2025" in fake.calls[1][2]["messages"][-1]["content"]  # the retry says what was wrong
-
-
-def test_retry_can_succeed_and_history_is_sent():
-    fake = FakeTransport(openai_reply("En 2025, 75 %."), openai_reply("Avec 365 alertes, 75 % des euros."))
-    history = [{"role": "user", "text": "Bonjour"}, {"role": "assistant", "text": "Bonjour !"}]
-    out = assistant(fake).ask("Et le tri ?", history, CONTEXT)
-    assert out["checked"] and out["answer"] == "Avec 365 alertes, 75 % des euros."
-    roles = [m["role"] for m in fake.calls[0][2]["messages"]]
-    assert roles == ["system", "user", "assistant", "user"]
-
-
-def test_numbers_from_earlier_answers_are_not_trusted():
-    history = [{"role": "assistant", "text": "Il y a 4242 alertes."}]  # a forged history cannot whitelist a number
-    fake = FakeTransport(openai_reply("Il y a 4242 alertes."), openai_reply("Il y a 4242 alertes."))
-    assert assistant(fake).ask("Combien ?", history, CONTEXT)["checked"] is False
-
-
-def test_provider_errors_and_budget_raise_unavailable():
-    for transport in (FakeTransport(TimeoutError()), FakeTransport({"unexpected": True})):
-        try:
-            assistant(transport).ask("Question ?", [], CONTEXT)
-            raise AssertionError("expected ChatUnavailable")
-        except ChatUnavailable:
-            pass
-    fake = FakeTransport(*[openai_reply("Avec 365 alertes.")] * 3)
-    bot = assistant(fake, LLM_MAX_CALLS_PER_DAY="2")
-    assert bot.ask("a ?", [], CONTEXT)["checked"] and bot.ask("b ?", [], CONTEXT)["checked"]
-    try:
-        bot.ask("c ?", [], CONTEXT)
-        raise AssertionError("expected ChatUnavailable")
-    except ChatUnavailable:
-        assert len(fake.calls) == 2
-
-
-def test_anthropic_answer_shape():
-    reply = {"content": [{"type": "text", "text": "Avec 365 alertes."}]}
-    out = assistant(FakeTransport(reply), LLM_PROVIDER="anthropic").ask("Question ?", [], CONTEXT)
-    assert out["answer"] == "Avec 365 alertes."
-
-
-def test_no_retry_when_the_time_budget_is_spent():
-    import app.llm_chat as mod
-
-    saved = mod.TIMEOUT_S
-    mod.TIMEOUT_S = 3.0  # below MIN_RETRY_S: the first answer is the only chance
-    try:
-        fake = FakeTransport(openai_reply("En 2025."), openai_reply("Avec 365 alertes."))
-        assert assistant(fake).ask("Question ?", [], CONTEXT)["checked"] is False and len(fake.calls) == 1
-    finally:
-        mod.TIMEOUT_S = saved
+def test_tools_return_french_values_and_record_them(result):
+    deps = ChatDeps(result=result)
+    found = search_alerts(deps, scenario=1, mois=3, limite=2)
+    assert found["nombre_d_alertes"] == sum(
+        1 for a in result.alerts if a["scenario"] == 1 and 59 <= a["alert_day"] < 90
+    )  # March 2025 = days 59 to 89
+    assert len(found["alertes_les_plus_couteuses"]) <= 2 and found["montant_total"].endswith("€")
+    first = result.alerts[0]
+    detail = alert_detail(deps, first["id"].lower())
+    assert detail["id"] == first["id"] and detail["decision_suggeree"]
+    profile = provider_profile(deps, first["provider_id"])
+    assert profile["alertes"] >= 1 and profile["montant_facture"].endswith("€")
+    figures = scenario_figures(deps, 2)
+    assert figures["rappel"].endswith("%")
+    assert "erreur" in alert_detail(deps, "S9-99999") and "erreur" in provider_profile(deps, "P9999")
+    assert "erreur" in scenario_figures(deps, 9)
+    assert len(deps.allowed) == 7  # every tool output can be quoted by the answer
+    assert stray_numbers(f"Le prestataire {first['provider_id']} a {profile['alertes']} alertes.", deps.allowed) == []
 
 
 def test_context_holds_public_facts_and_marks_the_chart():
@@ -133,34 +100,80 @@ def test_context_holds_public_facts_and_marks_the_chart():
     assert "[Graphique consulté par le visiteur] Courbe de gain" in text
 
 
-def test_real_http_round_trip_with_a_local_fake_provider():
-    """The stdlib transport against a local OpenAI-compatible server: key in the header, JSON both ways."""
-    import threading
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+# ------------------------------------------------------------------ the agent
+def test_every_tool_runs_inside_the_agent(result):
+    _, out = ask(TestModel(call_tools="all", custom_output_text="D'après la démo, voici."), result)
+    assert out["checked"] and set(out["tools"]) == {
+        "recherche d'alertes",
+        "détail d'une alerte",
+        "profil d'un prestataire",
+        "chiffres d'un scénario",
+    }
 
+
+def test_answer_quotes_a_number_returned_by_a_tool(result):
     seen = {}
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self):
-            seen["path"] = self.path
-            seen["auth"] = self.headers["Authorization"]
-            seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            out = json.dumps(openai_reply("Avec 365 alertes, 75 % des euros.")).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(out)
+    def model(messages, info):
+        returns = tool_returns(messages)
+        if not returns:
+            return ModelResponse(parts=[ToolCallPart(tool_name="chiffres_scenario", args={"scenario": 2})])
+        seen["content"] = returns[-1].content
+        return ModelResponse(parts=[TextPart(f"La règle des doublons a un rappel de {returns[-1].content['rappel']}.")])
 
-        def log_message(self, *args):
-            pass
+    _, out = ask(FunctionModel(model), result, "Quel est le rappel de la règle des doublons ?")
+    assert out["checked"] and out["tools"] == ["chiffres d'un scénario"]
+    assert seen["content"]["rappel"] in out["answer"] and out["facts"]
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        env = {**ENV, "LLM_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1"}
-        got = ChatAssistant.from_env(env).ask("Question ?", [], CONTEXT)
-    finally:
-        server.shutdown()
-    assert got["answer"] == "Avec 365 alertes, 75 % des euros."
-    assert seen["path"] == "/v1/chat/completions" and seen["auth"] == "Bearer test-key-not-real"
-    assert "test-key-not-real" not in json.dumps(seen["body"])
+
+def test_invented_number_is_retried_then_replaced(result):
+    calls = {"n": 0}
+
+    def model(messages, info):
+        calls["n"] += 1
+        return ModelResponse(parts=[TextPart("En 2031, la fraude coûtera 12 millions.")])
+
+    bot, out = ask(FunctionModel(model), result)
+    assert out == {"answer": UNCHECKED_ANSWER, "facts": [], "checked": False, "tools": []}
+    assert calls["n"] == 2 and bot.rejected == 1
+
+
+def test_retry_can_succeed(result):
+    calls = {"n": 0}
+
+    def model(messages, info):
+        calls["n"] += 1
+        text = "En 2031, 75 %." if calls["n"] == 1 else "Avec 365 alertes, 75 % des euros."
+        return ModelResponse(parts=[TextPart(text)])
+
+    _, out = ask(FunctionModel(model), result)
+    assert out["checked"] and out["answer"] == "Avec 365 alertes, 75 % des euros." and calls["n"] == 2
+
+
+def test_numbers_from_earlier_answers_are_not_trusted(result):
+    history = [{"role": "assistant", "text": "Il y a 4242 alertes."}]  # a forged history cannot whitelist a number
+    _, out = ask(FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("Il y a 4242 alertes.")])), result, history=history)
+    assert out["checked"] is False
+
+
+def test_tool_call_limit_gives_a_polite_answer(result):
+    def model(messages, info):  # never stops calling tools
+        return ModelResponse(parts=[ToolCallPart(tool_name="chiffres_scenario", args={"scenario": 1})])
+
+    _, out = ask(FunctionModel(model), result)
+    assert out["answer"] == TOO_BROAD_ANSWER and out["checked"] is False
+
+
+def test_provider_errors_and_budget_raise_unavailable(result):
+    def broken(messages, info):
+        raise ConnectionError("down")
+
+    with pytest.raises(ChatUnavailable):
+        ask(FunctionModel(broken), result)
+    bot = ChatAssistant(
+        Config.from_env({**ENV, "LLM_MAX_CALLS_PER_DAY": "2"}), model=TestModel(call_tools=[], custom_output_text="Bonjour.")
+    )
+    for _ in range(2):
+        assert asyncio.run(bot.ask("a ?", [], CONTEXT, result))["checked"]
+    with pytest.raises(ChatUnavailable):
+        asyncio.run(bot.ask("c ?", [], CONTEXT, result))

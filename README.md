@@ -1,5 +1,5 @@
 ---
-title: Mutuelle Exemple – Fraude par scénarios
+title: Mutuelle Exemple, fraude par scénarios
 emoji: 🔎
 colorFrom: blue
 colorTo: gray
@@ -299,7 +299,7 @@ Une règle par scénario lève des alertes. Chacune explique en une phrase pourq
 
 L'interface en français propose sept vues :
 - une vue d'ensemble ;
-- les prestataires et le réseau : alertes par prestataire et par semaine, profil de facturation, graphe adhérents–prestataires ;
+- les prestataires et le réseau : alertes par prestataire et par semaine, profil de facturation, graphe adhérents et prestataires ;
 - un modèle non supervisé (Isolation Forest) comparé aux règles à charge de travail égale, en simple comparaison ;
 - une exploration des données en douze graphiques (distribution des montants, dispersion des prix, saisonnalité, concentration, et pour chaque scénario la variable sur laquelle porte la règle) ;
 - la file d'alertes ;

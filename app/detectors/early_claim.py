@@ -1,4 +1,4 @@
-"""Scenario 5 — costly claim very soon after the policy starts.
+"""Scenario 5: costly claim very soon after the policy starts.
 
 A line is flagged when it is dated within ``MAX_DAYS`` of the policy start
 and is either a costly act or above ``MIN_AMOUNT``.

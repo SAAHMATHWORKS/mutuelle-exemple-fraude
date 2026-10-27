@@ -194,7 +194,7 @@ def age_vs_spend(claims: pd.DataFrame, members: pd.DataFrame, seed: int) -> dict
         if len(band):
             bands.append(
                 {
-                    "band": f"{lo}–{lo + 9} ans",
+                    "band": f"{lo} à {lo + 9} ans",
                     "mid_age": lo + 5,
                     "n": len(band),
                     "median": _r(band.amount.median(), 2),

@@ -1,4 +1,4 @@
-"""Scenario 4 — diagnosis / act incoherence.
+"""Scenario 4: diagnosis / act incoherence.
 
 A small rules table (``Act.allowed_groups`` in ``app.catalog``) lists the
 diagnosis groups each act normally goes with. A line whose diagnosis is not

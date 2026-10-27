@@ -1,4 +1,4 @@
-/* Mutuelle Exemple — fraud demo. Tokens first, then layout, then components. */
+/* Mutuelle Exemple: fraud demo. Tokens first, then layout, then components. */
 :root {
   color-scheme: light;
   --bg: #f4f3ef;
@@ -519,3 +519,4 @@ mark.fact { background: color-mix(in srgb, var(--accent) 16%, transparent); colo
 @media (max-width: 640px) { .chat-panel { height: 82vh; } }
 .chat-hello { flex-basis: 100%; margin: 0 0 4px; color: var(--text-2); font-size: 0.92rem; }
 .chat-suggest { margin-top: auto; }
+.msg-tools { display: block; margin-top: 6px; font-size: 0.78rem; font-style: normal; color: var(--text-3); }
