@@ -1,0 +1,25 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local configuration: never commit it
+.env
+.env.*
+!.env.example
+
+# Build and run outputs
+*.zip
+uvicorn.log
+screenshots/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

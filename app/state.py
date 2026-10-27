@@ -1,0 +1,132 @@
+"""In-memory application state: the current dataset, its alerts, and the
+noise curve (performance at several noise levels), computed in background."""
+
+from __future__ import annotations
+
+import os
+import threading
+import time
+from collections import deque
+
+from app.generator import DEFAULT_SEED, DEFAULT_SIZE, generate
+from app.pipeline import Result, run
+
+CURVE_LEVELS = (0.0, 0.25, 0.5, 0.75, 1.0)
+CURVE_MAX_SIZE = 20_000
+DEFAULT_NOISE = 0.2
+
+# Optional overrides for the dataset built at startup (handy for tests or a small host).
+START_SEED = int(os.environ.get("DEMO_SEED", DEFAULT_SEED))
+START_SIZE = int(os.environ.get("DEMO_SIZE", DEFAULT_SIZE))
+START_NOISE = float(os.environ.get("DEMO_NOISE", DEFAULT_NOISE))
+
+
+class AppState:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._regen_lock = threading.Lock()
+        self.result: Result | None = None
+        self._curves: dict[tuple[int, int], dict] = {}
+        self._curve_running: set[tuple[int, int]] = set()
+
+    # ----------------------------------------------------------- dataset
+    def load(self, seed: int = START_SEED, size: int = START_SIZE, noise_level: float = START_NOISE) -> Result:
+        result = run(generate(seed=seed, size=size, noise_level=noise_level))
+        with self._lock:
+            self.result = result
+        return result
+
+    def current(self) -> Result:
+        if self.result is None:
+            return self.load()
+        return self.result
+
+    def try_regenerate(self, seed: int, size: int, noise_level: float) -> Result | None:
+        """Regenerate unless another regeneration is already running (returns None)."""
+        if not self._regen_lock.acquire(blocking=False):
+            return None
+        try:
+            return self.load(seed, size, noise_level)
+        finally:
+            self._regen_lock.release()
+
+    # ------------------------------------------------------- noise curve
+    def curve(self, seed: int, size: int, background: bool = True) -> dict:
+        key = (seed, min(size, CURVE_MAX_SIZE))
+        with self._lock:
+            if key in self._curves:
+                return self._curves[key]
+            running = key in self._curve_running
+            if not running:
+                self._curve_running.add(key)
+        if not running:
+            if background:
+                threading.Thread(target=self._compute_curve, args=(key,), daemon=True).start()
+            else:
+                self._compute_curve(key)
+                return self._curves[key]
+        return {"status": "computing", "seed": key[0], "size": key[1], "levels": []}
+
+    def _compute_curve(self, key: tuple[int, int]) -> None:
+        seed, size = key
+        t0 = time.perf_counter()
+        levels = []
+        try:
+            for noise in CURVE_LEVELS:
+                ev = run(generate(seed=seed, size=size, noise_level=noise)).evaluation
+                levels.append(
+                    {
+                        "noise_level": noise,
+                        "per_scenario": [
+                            {k: p[k] for k in ("scenario", "label", "recall", "precision", "false_alerts_per_day")}
+                            for p in ev["per_scenario"]
+                        ],
+                        "overall": {
+                            k: ev["overall"][k] for k in ("recall_any", "precision_any", "alerts_per_day", "false_alerts_per_day")
+                        },
+                    }
+                )
+            data = {
+                "status": "ready",
+                "seed": seed,
+                "size": size,
+                "levels": levels,
+                "computed_in_s": round(time.perf_counter() - t0, 1),
+            }
+        except Exception as exc:  # pragma: no cover - defensive
+            data = {"status": "error", "seed": seed, "size": size, "levels": [], "error": str(exc)}
+        with self._lock:
+            self._curves[key] = data
+            self._curve_running.discard(key)
+
+
+class RateLimiter:
+    """Small sliding-window limiter: per client and global."""
+
+    def __init__(self, per_client_seconds: float = 15.0, global_per_minute: int = 6) -> None:
+        self.per_client_seconds = per_client_seconds
+        self.global_per_minute = global_per_minute
+        self._last: dict[str, float] = {}
+        self._recent: deque[float] = deque()
+        self._lock = threading.Lock()
+
+    def check(self, client: str) -> float:
+        """Return 0 if allowed (and record it), otherwise seconds to wait."""
+        now = time.monotonic()
+        with self._lock:
+            while self._recent and now - self._recent[0] > 60:
+                self._recent.popleft()
+            wait_client = self.per_client_seconds - (now - self._last.get(client, -1e9))
+            wait_global = 60 - (now - self._recent[0]) if len(self._recent) >= self.global_per_minute else 0
+            wait = max(wait_client, wait_global, 0)
+            if wait > 0:
+                return wait
+            self._last[client] = now
+            self._recent.append(now)
+            if len(self._last) > 10_000:
+                self._last.clear()
+            return 0.0
+
+
+state = AppState()
+limiter = RateLimiter()

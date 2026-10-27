@@ -1,0 +1,9 @@
+# Render Blueprint: one free web service built from the Dockerfile.
+services:
+  - type: web
+    name: mutuelle-exemple-fraude
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true

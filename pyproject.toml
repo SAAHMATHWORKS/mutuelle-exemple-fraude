@@ -1,0 +1,19 @@
+[project]
+name = "mutuelle-exemple-fraude"
+version = "1.0.0"
+description = "Scenario-based health-insurance fraud detection demo on fully synthetic data."
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # French text uses typographic quotes and apostrophes on purpose
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]

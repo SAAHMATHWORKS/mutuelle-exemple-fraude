@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fraude par scénarios — Mutuelle Exemple</title>
+  <meta name="description" content="Démo de détection de fraude santé par scénarios, sur données entièrement synthétiques.">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/vendor/chart.umd.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Aller au contenu</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#/vue-ensemble" aria-label="Accueil : vue d'ensemble">
+        <span class="brand-mark" aria-hidden="true">ME</span>
+        <span class="brand-text"><strong>Mutuelle Exemple</strong><span>Détection de fraude par scénarios</span></span>
+      </a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Thème : automatique">
+        <span aria-hidden="true">Thème :</span><span class="theme-label" id="theme-label">Auto</span>
+      </button>
+    </div>
+    <nav class="tabs" aria-label="Vues">
+      <a href="#/vue-ensemble" data-view="overview">Vue d'ensemble</a>
+      <a href="#/alertes" data-view="alerts">File d'alertes</a>
+      <a href="#/evaluation" data-view="evaluation">Évaluation</a>
+    </nav>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div id="view" aria-live="polite"><p class="loading">Chargement…</p></div>
+  </main>
+
+  <footer class="site-footer">
+    <p><strong>Données entièrement synthétiques.</strong> Assureur, adhérents, prestataires et montants sont inventés ; aucune donnée réelle n'est utilisée.</p>
+    <p class="muted">Règles et statistiques uniquement, sans modèle opaque. <a href="/openapi.json">Schéma de l'API (OpenAPI)</a></p>
+  </footer>
+</body>
+</html>

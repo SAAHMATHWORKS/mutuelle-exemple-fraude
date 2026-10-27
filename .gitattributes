@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.png binary
+*.ico binary
+
+# Third-party file: keep it out of the language statistics and diffs.
+app/static/vendor/** linguist-vendored -diff
