@@ -39,7 +39,13 @@ jobs:
         run: ruff format --check .
 
       - name: Pytest
-        run: pytest -q --durations=5
+        run: |
+          set -o pipefail
+          # Failures are also raised as annotations, readable from the run page and the API.
+          pytest -q --durations=5 -rf --tb=short 2>&1 | tee pytest.log || {
+            grep -E '^(FAILED|ERROR|E  )' pytest.log | head -40 | sed 's/^/::error title=pytest::/'
+            exit 1
+          }
 
       - name: Start the app and call the API
         env:
