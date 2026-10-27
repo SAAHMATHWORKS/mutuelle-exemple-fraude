@@ -90,7 +90,7 @@ async def main():
         from pydantic_ai.usage import UsageLimits
 
         r = await agent.run("Combien ?", deps=deps, model=FunctionModel(fn), usage_limits=UsageLimits(request_limit=6), timeout=20)
-        note(f"run ok: output={r.output!r} usage={r.usage()} calls={calls['n']} seen={deps.seen}")
+        note(f"run ok: output={r.output!r} usage={r.usage} calls={calls['n']} seen={deps.seen}")
         note("result attrs: " + ", ".join(a for a in ["output", "usage", "all_messages", "new_messages"] if hasattr(r, a)))
     except Exception:
         err("run")
