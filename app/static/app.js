@@ -84,7 +84,7 @@
     if (!window.Chart) {
       // Never leave an empty frame: say why there is no chart (the table view still has the data).
       const wrap = canvas && canvas.parentElement;
-      if (wrap) wrap.innerHTML = `<p class="error">Graphique indisponible : la bibliothèque de graphiques ne s'est pas chargée. Rechargez la page ; les données restent lisibles dans « Voir les données en tableau ».</p>`;
+      if (wrap) wrap.innerHTML = `<p class="loading chart-missing">Chargement du graphique… (les données sont aussi dans « Voir les données en tableau »)</p>`;
       return null;
     }
     const c = new Chart(canvas, config);
@@ -174,21 +174,38 @@
     const o = await api("/api/overview");
     meta = { scenarios: o.scenarios, decisions: o.decisions };
     const d = o.dataset;
+    const h = o.highlights;
     const maxAlerts = Math.max(...o.per_scenario.map((s) => s.alerts), 1);
+    const sevColor = { haute: css("--critical"), moyenne: css("--serious"), faible: css("--warning") };
+    const findings = [
+      { href: "#/exploration", title: "Exploration des données", text: h.price_signal ? `À partir de ${esc(h.price_signal.threshold)} le prix habituel, on trouve ${pct(h.price_signal.fraud)} des prix gonflés injectés et seulement ${pct1(h.price_signal.legit)} des lignes légitimes.` : "" },
+      { href: "#/prestataires", title: "Prestataires et réseau", text: h.complicit ? `Agréger par prestataire place les ${h.complicit.total} complices injectés ${h.complicit.in_top === h.complicit.total ? "tous" : h.complicit.in_top} en tête du profil de facturation.` : "" },
+      { href: "#/evaluation", title: "Évaluation", text: h.gain ? `Avec ${nf.format(h.gain.capacity)} alertes traitées sur l'année, trier par montant retrouve ${pct(h.gain.amount_order)} des euros frauduleux, contre ${pct(h.gain.severity_order)} par sévérité.` : `Rappel ${pct(h.recall)}, précision ${pct(h.precision)}, ${nf1.format(h.false_alerts_per_day)} fausse alerte par jour.` },
+      { href: "#/modele", title: "Modèle non supervisé", text: h.model ? `À charge égale, les règles retrouvent ${pct(h.model.rules)} des fraudes, l'Isolation Forest ${pct(h.model.metier)} avec les variables métier et ${pct(h.model.brutes)} sans.` : "Comparaison en cours de calcul." },
+    ];
+
     view.innerHTML = `
-      <div class="page-head">
+      <section class="hero" aria-labelledby="t-hero">
         <div>
-          <h1>Vue d'ensemble</h1>
-          <p>${nf.format(d.n_claims)} lignes de soins remboursées par ${esc(d.insurer)} en 2025, pour ${nf.format(d.n_members)} adhérents et ${nf.format(d.n_providers)} prestataires.
-          Cinq règles cherchent chacune un scénario de fraude et expliquent leurs alertes en clair.</p>
+          <h1 id="t-hero">Détecter la fraude santé, scénario par scénario</h1>
+          <p>${esc(d.insurer)}, assureur fictif, rembourse ${nf.format(d.n_claims)} actes en 2025 à ${nf.format(d.n_members)} adhérents, chez ${nf.format(d.n_providers)} prestataires.
+          Cinq fraudes typiques y ont été injectées. Cinq règles lisibles les cherchent : chaque alerte dit pourquoi elle existe, montre ses preuves et propose une décision au gestionnaire.</p>
         </div>
-      </div>
-      <section class="grid kpis" aria-label="Chiffres clés">
-        <div class="kpi"><div class="label">Alertes sur l'année</div><div class="value">${nf.format(o.totals.alerts)}</div><div class="hint">toutes règles confondues</div></div>
-        <div class="kpi"><div class="label">Alertes par jour</div><div class="value">${nf1.format(o.totals.alerts_per_day)}</div><div class="hint">en moyenne, à traiter par un gestionnaire</div></div>
-        <div class="kpi"><div class="label">Sévérité haute</div><div class="value">${nf.format(o.totals.high_severity)}</div><div class="hint">${pct(o.totals.high_severity / Math.max(o.totals.alerts, 1))} des alertes</div></div>
-        <div class="kpi"><div class="label">Montant signalé</div><div class="value">${eur0.format(o.totals.flagged_amount)}</div><div class="hint">sur ${eur0.format(d.total_billed)} facturés</div></div>
+        <ol class="steps" aria-label="Comment lire la démo">
+          <li><a href="#/exploration"><span class="step-n">1</span><strong>Comprendre les données</strong><span>Distributions, saisonnalité, signal de chaque fraude.</span></a></li>
+          <li><a href="#/alertes"><span class="step-n">2</span><strong>Traiter les alertes</strong><span>La file du gestionnaire, puis le détail d'une alerte.</span></a></li>
+          <li><a href="#/evaluation"><span class="step-n">3</span><strong>Mesurer honnêtement</strong><span>Rappel, précision, seuils, courbe de gain, limites.</span></a></li>
+        </ol>
       </section>
+
+      <section class="grid kpis" aria-label="Chiffres clés">
+        <div class="kpi"><div class="label">Alertes sur l'année</div><div class="value">${nf.format(o.totals.alerts)}</div><div class="hint">${nf1.format(o.totals.alerts_per_day)} par jour pour un gestionnaire</div></div>
+        <div class="kpi"><div class="label">Fraudes retrouvées (rappel)</div><div class="value">${pct(h.recall)}</div><div class="hint">des lignes frauduleuses injectées</div></div>
+        <div class="kpi"><div class="label">Alertes justes (précision)</div><div class="value">${pct(h.precision)}</div><div class="hint">des lignes signalées sont frauduleuses</div></div>
+        <div class="kpi"><div class="label">Fausses alertes par jour</div><div class="value">${nf1.format(h.false_alerts_per_day)}</div><div class="hint">alertes sans aucune ligne frauduleuse</div></div>
+        <div class="kpi"><div class="label">Montant signalé</div><div class="value">${eur0.format(o.totals.flagged_amount)}</div><div class="hint">${h.caught_amount_share !== null ? `${pct(h.caught_amount_share)} des euros frauduleux retrouvés` : `sur ${eur0.format(d.total_billed)} facturés`}</div></div>
+      </section>
+
       <div class="grid two-col">
         <section class="card" aria-labelledby="t-volume">
           <div class="card-head">
@@ -217,6 +234,59 @@
           </ul>
         </section>
       </div>
+
+      <div class="grid halves section">
+        ${chartCard({
+          id: "sev", title: "Gravité des alertes par scénario",
+          sub: (() => {
+            const share = (s, k) => s.by_severity[k] / Math.max(s.alerts, 1);
+            const top = [...o.per_scenario].sort((a, b) => share(b, "haute") - share(a, "haute"))[0];
+            const low = [...o.per_scenario].sort((a, b) => share(b, "faible") - share(a, "faible"))[0];
+            return `${nf.format(o.totals.high_severity)} alertes en sévérité haute (${pct(o.totals.high_severity / Math.max(o.totals.alerts, 1))}). La part la plus forte d'alertes graves revient au scénario « ${esc(top.label.toLowerCase())} » (${pct(share(top, "haute"))}) ; la plus forte part d'alertes faibles, au scénario « ${esc(low.label.toLowerCase())} » (${pct(share(low, "faible"))}).`;
+          })(),
+          legend: legendHtml([{ cls: "sev-h", label: "Haute" }, { cls: "sev-m", label: "Moyenne" }, { cls: "sev-f", label: "Faible" }]),
+          height: 260, aria: "Barres empilées du nombre d'alertes par niveau de sévérité pour chaque scénario",
+          table: dataTable(["Scénario", "Haute", "Moyenne", "Faible"], o.per_scenario.map((s) => [`${s.scenario}. ${s.label}`, nf.format(s.by_severity.haute), nf.format(s.by_severity.moyenne), nf.format(s.by_severity.faible)])),
+        })}
+        ${chartCard({
+          id: "dec", title: "Ce que le gestionnaire doit faire",
+          sub: "Décision suggérée par la règle pour chaque alerte. La plupart demandent une simple pièce justificative ; les contrôles plus lourds restent rares.",
+          height: 260, aria: "Barres horizontales du nombre d'alertes par décision suggérée",
+          table: dataTable(["Décision suggérée", "Alertes", "Montant"], o.by_decision.map((x) => [x.label, nf.format(x.alerts), eur0.format(x.amount)])),
+        })}
+      </div>
+
+      <div class="grid halves section">
+        <section class="card" aria-labelledby="t-recent">
+          <h2 id="t-recent">Dernières alertes en sévérité haute</h2>
+          <p class="sub">Les plus récentes de l'année. Ouvrez-en une pour voir la raison, les lignes de preuve et la décision proposée.</p>
+          <ul class="alert-list">${o.recent_high.map((a) => `
+            <li><a href="#/alertes/${encodeURIComponent(a.id)}">
+              <span class="al-top"><span class="mono">${esc(a.id)}</span>${scenarioHtml(a.scenario, a.scenario_label)}<span class="muted">${dateLong(a.date)}</span><strong class="num">${eur.format(a.amount)}</strong></span>
+              <span class="al-reason">${esc(a.reason)}</span>
+            </a></li>`).join("")}</ul>
+          <p style="margin:10px 0 0"><a href="#/alertes?severity=haute">Toutes les alertes en sévérité haute →</a></p>
+        </section>
+        <section class="card" aria-labelledby="t-prov">
+          <h2 id="t-prov">Prestataires les plus signalés</h2>
+          <p class="sub">Nombre d'alertes visant chaque prestataire (hors multiplication des prestataires, qui en vise plusieurs). Cliquez pour ouvrir ses alertes.</p>
+          <div class="table-scroll"><table class="responsive">
+            <thead><tr><th>Prestataire</th><th>Scénarios</th><th class="num">Alertes</th><th class="num">Montant</th></tr></thead>
+            <tbody>${o.top_providers.map((p) => `<tr class="clickable" data-q="${esc(p.provider_id)}">
+              <td data-label="Prestataire"><a class="mono" href="#/alertes?q=${encodeURIComponent(p.provider_id)}">${esc(p.provider_id)}</a> <span class="muted">${esc(p.type)}</span></td>
+              <td data-label="Scénarios">${p.scenarios.map((s) => `<span class="swatch s${s}" title="${esc(o.scenarios[s])}" aria-label="${esc(o.scenarios[s])}"></span>`).join(" ")}</td>
+              <td data-label="Alertes" class="num">${nf.format(p.alerts)}</td><td data-label="Montant" class="num">${eur0.format(p.amount)}</td></tr>`).join("")}</tbody>
+          </table></div>
+          <p style="margin:10px 0 0"><a href="#/prestataires">Profil de facturation et graphe adhérents–prestataires →</a></p>
+        </section>
+      </div>
+
+      <section class="section" aria-labelledby="t-find">
+        <h2 id="t-find" class="section-title" style="margin-top:8px">À retenir de chaque vue</h2>
+        <div class="findings">${findings.map((f) => `
+          <a class="finding card" href="${f.href}"><strong>${esc(f.title)}</strong><span>${f.text}</span><span class="go">Ouvrir →</span></a>`).join("")}</div>
+      </section>
+
       <details class="settings card">
         <summary>Paramètres de la simulation</summary>
         <p class="sub" style="margin-top:8px">Graine ${d.seed}, ${nf.format(d.size)} lignes visées, bruit ${nf.format(d.noise_level)}. Données générées en ${nf1.format(d.generated_in_s)} s, règles appliquées en ${nf1.format(d.detected_in_s)} s.
@@ -226,14 +296,14 @@
 
     const keys = o.per_scenario.map((s) => `s${s.scenario}`);
     const labels = Object.fromEntries(o.per_scenario.map((s) => [`s${s.scenario}`, s.label]));
+    let volumeChart = null;
     const draw = (gran) => {
-      charts.forEach((c) => c.destroy());
-      charts = [];
+      if (volumeChart) { volumeChart.destroy(); charts = charts.filter((c) => c !== volumeChart); }
       const rows = gran === "week" ? aggregateWeekly(o.per_day, keys) : o.per_day;
       document.getElementById("volume-sub").textContent = gran === "week"
         ? "Par semaine (semaine commençant le lundi), selon la date à laquelle l'alerte devient visible."
         : "Par jour, selon la date à laquelle l'alerte devient visible.";
-      makeChart(document.getElementById("c-volume"), {
+      volumeChart = makeChart(document.getElementById("c-volume"), {
         type: "bar",
         data: {
           labels: rows.map((r) => r.date),
@@ -266,6 +336,41 @@
     view.querySelectorAll("[data-gran]").forEach((b) => b.addEventListener("click", () => {
       view.querySelectorAll("[data-gran]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
       draw(b.dataset.gran);
+    }));
+
+    makeChart(document.getElementById("c-sev"), {
+      type: "bar",
+      data: {
+        labels: o.per_scenario.map((s) => SHORT_SCEN[s.scenario]),
+        datasets: ["haute", "moyenne", "faible"].map((sev) => ({
+          label: sev.charAt(0).toUpperCase() + sev.slice(1), data: o.per_scenario.map((s) => s.by_severity[sev]),
+          backgroundColor: sevColor[sev], stack: "a", borderColor: css("--surface"), borderWidth: { right: 2 }, borderSkipped: false, maxBarThickness: 22,
+        })),
+      },
+      options: {
+        indexAxis: "y",
+        interaction: { mode: "index", intersect: false, axis: "y" },
+        scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, border: { display: false } }, y: { stacked: true, grid: { display: false } } },
+        plugins: { tooltip: { callbacks: { title: (items) => `${o.per_scenario[items[0].dataIndex].scenario}. ${o.per_scenario[items[0].dataIndex].label}`, label: (it) => `${it.dataset.label} : ${nf.format(it.parsed.x)}` } } },
+      },
+    });
+
+    makeChart(document.getElementById("c-dec"), {
+      type: "bar",
+      data: { labels: o.by_decision.map((x) => SHORT_DECISION[x.decision] || x.label), datasets: [{ label: "Alertes", data: o.by_decision.map((x) => x.alerts), backgroundColor: css("--accent"), borderRadius: 3, borderSkipped: "start", maxBarThickness: 22 }] },
+      options: {
+        indexAxis: "y",
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 }, border: { display: false } },
+          y: { grid: { display: false } },
+        },
+        plugins: { tooltip: { callbacks: { title: (items) => o.by_decision[items[0].dataIndex].label, label: (it) => `${nf.format(it.parsed.x)} alertes, ${eur0.format(o.by_decision[it.dataIndex].amount)}` } } },
+      },
+    });
+
+    view.querySelectorAll("tr.clickable[data-q]").forEach((tr) => tr.addEventListener("click", (e) => {
+      if (e.target.closest("a")) return;
+      location.hash = `#/alertes?q=${encodeURIComponent(tr.dataset.q)}`;
     }));
     bindRegenForm();
   }
@@ -982,6 +1087,10 @@
   // ========================================================== PROVIDERS VIEW
   const heatBg = (share, base = "var(--surface-2)") => `background:color-mix(in srgb, var(--accent) ${Math.round(Math.min(1, share) * 88)}%, ${base})`;
   const complicitTag = '<span class="tag" title="Vérité injectée par le générateur ; les règles ne connaissent pas cette liste">complice injecté</span>';
+  const SHORT_DECISION = {
+    demander_facture: "Demander la facture", demander_justificatif: "Demander un justificatif", verifier_contrat: "Vérifier le contrat",
+    controle_prestataire: "Contrôle prestataire", controle_medical: "Contrôle médical", aucune_action: "Aucune action",
+  };
   const SHORT_SCEN = { 1: "1. Prix", 2: "2. Doublon", 3: "3. Prestataires", 4: "4. Incohérence", 5: "5. Précoce" };
   const MONTH_START_DAYS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
   const MONTHS_SHORT = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
@@ -1719,10 +1828,18 @@
     update();
   }
 
-  // Wait for Chart.js (up to 5 s) before the first render, whatever order the scripts arrive in.
-  function whenChartReady(cb, waited = 0) {
-    if (window.Chart || waited >= 5000) { cb(); return; }
-    setTimeout(() => whenChartReady(cb, waited + 100), 100);
-  }
-  whenChartReady(route);
+  // Render as soon as Chart.js is there (scripts may arrive in any order behind a CDN). If it is
+  // slow, render the text after 3 s anyway, then redraw by itself the moment the library arrives,
+  // so a visitor never has to reload the page.
+  let firstRender = false;
+  const start = () => { if (!firstRender) { firstRender = true; route(); } };
+  (function waitForChart(waited) {
+    if (window.Chart) {
+      if (!firstRender) start();
+      else if (document.querySelector("#view .chart-missing")) route(); // late arrival: redraw the charts
+      return;
+    }
+    if (waited === 3000) start();
+    if (waited < 60000) setTimeout(() => waitForChart(waited + 100), 100);
+  })(0);
 })();

@@ -39,6 +39,10 @@ def test_overview_contract(client):
     assert len(body["per_day"]) == 365
     assert {"date", "s1", "s2", "s3", "s4", "s5"} == body["per_day"][0].keys()
     assert sum(s["alerts"] for s in body["per_scenario"]) == body["totals"]["alerts"]
+    assert sum(x["alerts"] for x in body["by_decision"]) == body["totals"]["alerts"]
+    assert body["top_providers"] and body["recent_high"]
+    assert all(a["severity"] == "haute" for a in body["recent_high"])
+    assert {"recall", "precision", "false_alerts_per_day", "price_signal", "complicit"} <= body["highlights"].keys()
 
 
 def test_alert_list_filters_and_pagination(client):

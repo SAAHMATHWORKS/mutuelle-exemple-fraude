@@ -215,7 +215,84 @@ def overview() -> dict:
         "per_day": per_day,
         "scenarios": {str(k): v["label"] for k, v in SCENARIOS.items()},
         "decisions": DECISIONS,
+        "by_decision": _by_decision(r.alerts),
+        "top_providers": _top_providers(r),
+        "recent_high": _recent_high(r.alerts),
+        "highlights": _highlights(r),
     }
+
+
+def _recent_high(alerts: list[dict], n: int = 6) -> list[dict]:
+    high = [a for a in alerts if a["severity"] == "haute"]
+    return [_summary(a) for a in sorted(high, key=lambda a: (-a["alert_day"], a["id"]))[:n]]
+
+
+def _by_decision(alerts: list[dict]) -> list[dict]:
+    rows = []
+    for key, label in DECISIONS.items():
+        al = [a for a in alerts if a["decision"] == key]
+        if al:
+            rows.append({"decision": key, "label": label, "alerts": len(al), "amount": round(sum(a["amount"] for a in al), 2)})
+    return sorted(rows, key=lambda x: -x["alerts"])
+
+
+def _top_providers(r, n: int = 6) -> list[dict]:
+    ptype = dict(zip(r.dataset.providers.provider_id, r.dataset.providers.provider_type, strict=True))
+    agg: dict[str, dict] = {}
+    for a in r.alerts:
+        p = a["provider_id"]
+        if p is None:
+            continue
+        empty = {"provider_id": p, "type": PROVIDER_TYPES[ptype[p]], "alerts": 0, "amount": 0.0, "scenarios": set()}
+        row = agg.setdefault(p, empty)
+        row["alerts"] += 1
+        row["amount"] += a["amount"]
+        row["scenarios"].add(a["scenario"])
+    top = sorted(agg.values(), key=lambda x: (-x["alerts"], x["provider_id"]))[:n]
+    return [{**x, "amount": round(x["amount"], 2), "scenarios": sorted(x["scenarios"])} for x in top]
+
+
+def _highlights(r) -> dict:
+    """One key number per view, for the overview page. Parts still computing are None."""
+    ev = r.evaluation["overall"]
+    out: dict = {
+        "recall": ev["recall_any"],
+        "precision": ev["precision_any"],
+        "false_alerts_per_day": ev["false_alerts_per_day"],
+        "caught_amount_share": round(ev["caught_amount"] / ev["fraud_amount"], 3) if ev["fraud_amount"] else None,
+    }
+    sig = r.get_exploration()["signals"]["price"]
+    out["price_signal"] = {
+        "fraud": sig["fraud_rule_share"],
+        "legit": sig["legit_rule_share"],
+        "threshold": sig["threshold_label"],
+    }
+    card = r.get_providers()["scorecard"]
+    out["complicit"] = {"in_top": card["complicit_in_top"], "total": card["complicit_total"]}
+    adv = r.advanced if r.advanced and "error" not in r.advanced else None
+    if adv:
+        g = adv["gain"]
+        cap = min(g["alerts"], g["days"])
+
+        def at(name: str) -> float:
+            pts = g["curves"][name]["amount"]
+            return next((p["y"] for p in pts if p["k"] >= cap), pts[-1]["y"])
+
+        out["gain"] = {
+            "capacity": cap,
+            "amount_order": at("amount"),
+            "severity_order": at("severity_amount"),
+            "arrival_order": at("chronological"),
+        }
+    m = r.model if r.model and "error" not in r.model else None
+    if m:
+        out["model"] = {
+            "rules": m["rules"]["recall"],
+            "metier": m["models"]["metier"]["at_budget"]["recall"],
+            "brutes": m["models"]["brutes"]["at_budget"]["recall"],
+            "model_only": m["overlap"]["fraud_model_only"],
+        }
+    return out
 
 
 @app.get("/api/alerts", response_model=AlertPage)

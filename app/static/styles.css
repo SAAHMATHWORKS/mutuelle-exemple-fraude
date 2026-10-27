@@ -326,3 +326,28 @@ table.scorecard th.rowh { white-space: nowrap; }
 .scroll-hint { display: none; font-size: 0.78rem; color: var(--text-3); margin: 0 0 4px; }
 @media (max-width: 640px) { .scroll-hint { display: block; } }
 .notice code { font-family: var(--mono); font-size: 0.85em; background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+
+/* ----- overview ----- */
+.hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: center; margin-bottom: 18px; }
+.hero h1 { font-size: 1.65rem; margin-bottom: 6px; }
+.hero p { margin: 0; color: var(--text-2); max-width: 62ch; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.steps a { display: grid; grid-template-columns: 30px 1fr; column-gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); text-decoration: none; color: var(--text); }
+.steps a:hover { background: var(--surface-2); }
+.steps a span:not(.step-n) { grid-column: 2; font-size: 0.83rem; color: var(--text-3); }
+.step-n { grid-row: 1 / 3; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; font-size: 0.85rem; }
+@media (max-width: 900px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.swatch.sev-h { background: var(--critical); } .swatch.sev-m { background: var(--serious); } .swatch.sev-f { background: var(--warning); }
+.alert-list { list-style: none; margin: 0; padding: 0; }
+.alert-list li { border-top: 1px solid var(--grid); }
+.alert-list li:first-child { border-top: 0; }
+.alert-list a { display: block; padding: 9px 2px; text-decoration: none; color: var(--text); }
+.alert-list a:hover { background: var(--surface-2); }
+.al-top { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 0.85rem; }
+.al-top strong { margin-left: auto; }
+.al-reason { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 0.85rem; color: var(--text-2); margin-top: 3px; }
+.findings { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.finding { display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: var(--text); }
+.finding:hover { background: var(--surface-2); }
+.finding span { font-size: 0.88rem; color: var(--text-2); }
+.finding .go { margin-top: auto; color: var(--accent); font-weight: 600; }
