@@ -13,9 +13,9 @@ from app.llm_chat import (
     TOO_BROAD_ANSWER,
     UNCHECKED_ANSWER,
     ChatAssistant,
-    ChatDeps,
     ChatUnavailable,
     Config,
+    DemoData,
     alert_detail,
     build_context,
     build_model,
@@ -72,7 +72,7 @@ def test_number_check():
 
 
 def test_tools_return_french_values_and_record_them(result):
-    deps = ChatDeps(result=result)
+    deps = DemoData(result=result)
     found = search_alerts(deps, scenario=1, mois=3, limite=2)
     assert found["nombre_d_alertes"] == sum(
         1 for a in result.alerts if a["scenario"] == 1 and 59 <= a["alert_day"] < 90

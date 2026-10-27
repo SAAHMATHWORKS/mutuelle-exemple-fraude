@@ -42,7 +42,7 @@ from app.generator import PERIOD_START
 try:  # optional at runtime: without it (or without configuration) there is simply no chat
     from pydantic_ai import Agent, ModelRetry, RunContext
     from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
-    from pydantic_ai.messages import ToolCallPart
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
     from pydantic_ai.usage import UsageLimits
 except ImportError:  # pragma: no cover - the Docker image and the CI always have it
     Agent = None
@@ -70,7 +70,7 @@ TOOL_LABELS = {
     "chiffres_scenario": "chiffres d'un scénario",
 }
 
-SYSTEM_PROMPT = (
+INSTRUCTIONS = (
     "Tu es l'assistant d'une démo de détection de fraude en assurance santé réalisée par Thibaut Saah. "
     "L'assureur « Mutuelle Exemple » est fictif et toutes les données sont synthétiques. "
     "Tu réponds aux questions des visiteurs (recruteurs, gestionnaires de sinistres, data scientists) "
@@ -150,7 +150,7 @@ def _date(day: int) -> str:
 
 
 @dataclass
-class ChatDeps:
+class DemoData:
     """What the tools read (the current result) and the texts whose numbers an answer may quote."""
 
     result: Any
@@ -174,7 +174,7 @@ def _alert_row(a: dict) -> dict:
 
 
 def search_alerts(
-    deps: ChatDeps,
+    deps: DemoData,
     scenario: int | None = None,
     severite: Literal["haute", "moyenne", "faible"] | None = None,
     prestataire: str | None = None,
@@ -200,7 +200,7 @@ def search_alerts(
     )
 
 
-def alert_detail(deps: ChatDeps, alerte_id: str) -> dict:
+def alert_detail(deps: DemoData, alerte_id: str) -> dict:
     r = deps.result
     a = r.alerts_by_id.get(alerte_id.strip().upper())
     if a is None:
@@ -218,7 +218,7 @@ def alert_detail(deps: ChatDeps, alerte_id: str) -> dict:
     )
 
 
-def provider_profile(deps: ChatDeps, prestataire_id: str) -> dict:
+def provider_profile(deps: DemoData, prestataire_id: str) -> dict:
     r = deps.result
     pid = prestataire_id.strip().upper()
     claims = r.dataset.claims
@@ -243,7 +243,7 @@ def provider_profile(deps: ChatDeps, prestataire_id: str) -> dict:
     )
 
 
-def scenario_figures(deps: ChatDeps, scenario: int) -> dict:
+def scenario_figures(deps: DemoData, scenario: int) -> dict:
     rows = {s["scenario"]: s for s in deps.result.evaluation["per_scenario"]}
     s = rows.get(scenario)
     if s is None:
@@ -265,11 +265,11 @@ def scenario_figures(deps: ChatDeps, scenario: int) -> dict:
 
 # ------------------------------------------------------------------ agent
 if Agent is not None:
-    agent = Agent(deps_type=ChatDeps, output_type=str, retries=1)
+    agent = Agent(deps_type=DemoData, output_type=str, retries=1)
 
     @agent.tool
     def chercher_alertes(
-        ctx: RunContext[ChatDeps],
+        ctx: RunContext[DemoData],
         scenario: int | None = None,
         severite: Literal["haute", "moyenne", "faible"] | None = None,
         prestataire: str | None = None,
@@ -288,7 +288,7 @@ if Agent is not None:
         return search_alerts(ctx.deps, scenario, severite, prestataire, mois, limite)
 
     @agent.tool
-    def detail_alerte(ctx: RunContext[ChatDeps], alerte_id: str) -> dict:
+    def detail_alerte(ctx: RunContext[DemoData], alerte_id: str) -> dict:
         """Détail d'une alerte : raison, montant, décision suggérée, et si ses lignes sont une fraude injectée.
 
         Args:
@@ -297,7 +297,7 @@ if Agent is not None:
         return alert_detail(ctx.deps, alerte_id)
 
     @agent.tool
-    def profil_prestataire(ctx: RunContext[ChatDeps], prestataire_id: str) -> dict:
+    def profil_prestataire(ctx: RunContext[DemoData], prestataire_id: str) -> dict:
         """Profil de facturation d'un prestataire : volume, part des prix élevés, alertes par scénario.
 
         Args:
@@ -306,7 +306,7 @@ if Agent is not None:
         return provider_profile(ctx.deps, prestataire_id)
 
     @agent.tool
-    def chiffres_scenario(ctx: RunContext[ChatDeps], scenario: int) -> dict:
+    def chiffres_scenario(ctx: RunContext[DemoData], scenario: int) -> dict:
         """Évaluation d'une règle : alertes, rappel, précision, fausses alertes par jour.
 
         Args:
@@ -315,7 +315,7 @@ if Agent is not None:
         return scenario_figures(ctx.deps, scenario)
 
     @agent.output_validator
-    def _numbers_come_from_the_data(ctx: RunContext[ChatDeps], output: str) -> str:
+    def _numbers_come_from_the_data(ctx: RunContext[DemoData], output: str) -> str:
         stray = stray_numbers(output, ctx.deps.allowed)
         if stray:
             raise ModelRetry(
@@ -419,7 +419,7 @@ class ChatAssistant:
         if not self._spend(1):
             raise ChatUnavailable("budget")
         # Numbers the answer may use: the instructions, what the visitor wrote, and (added by the tools) the data.
-        deps = ChatDeps(result=result, allowed=[context, question, *(m["text"] for m in history if m["role"] == "user")])
+        deps = DemoData(result=result, allowed=[context, question, *(m["text"] for m in history if m["role"] == "user")])
         earlier = "\n".join(f"{'Visiteur' if m['role'] == 'user' else 'Assistant'} : {m['text']}" for m in history)
         prompt = f"Échanges précédents :\n{earlier}\n\nQuestion : {question}" if earlier else question
         try:
@@ -427,7 +427,7 @@ class ChatAssistant:
                 prompt,
                 deps=deps,
                 model=self.model,
-                instructions=f"{SYSTEM_PROMPT}\n\nCONTEXTE\n{context}",
+                instructions=f"{INSTRUCTIONS}\n\nCONTEXTE\n{context}",
                 usage_limits=UsageLimits(request_limit=MAX_REQUESTS, tool_calls_limit=MAX_TOOL_CALLS),
                 model_settings={"timeout": REQUEST_TIMEOUT_S},
                 timeout=TIMEOUT_S,
@@ -442,10 +442,8 @@ class ChatAssistant:
             log.warning("Chat : appel impossible (%s).", type(exc).__name__)
             raise ChatUnavailable("provider") from None
         self._spend(max(0, run.usage.requests - 1))
-        used = []
-        for m in run.all_messages():
-            for p in getattr(m, "parts", []):
-                if isinstance(p, ToolCallPart) and p.tool_name in TOOL_LABELS and TOOL_LABELS[p.tool_name] not in used:
-                    used.append(TOOL_LABELS[p.tool_name])
+        responses = [msg for msg in run.all_messages() if isinstance(msg, ModelResponse)]
+        called = [p.tool_name for msg in responses for p in msg.parts if isinstance(p, ToolCallPart)]
+        used = list(dict.fromkeys(TOOL_LABELS[name] for name in called if name in TOOL_LABELS))
         answer = run.output.strip()[:MAX_ANSWER_CHARS]
         return {"answer": answer, "facts": numbers_in(answer), "checked": True, "tools": used}
