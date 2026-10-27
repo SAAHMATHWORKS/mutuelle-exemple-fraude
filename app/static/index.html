@@ -27,6 +27,8 @@
       <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/></symbol>
       <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4.6A7.5 7.5 0 1 1 20 11.5z"/><path d="M9 10.5h6M9 13.5h4"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-5.5 16-3-6.5z"/><path d="M11.5 13.5 20 4"/></symbol>
     </defs>
   </svg>
 
@@ -88,6 +90,26 @@
     </div>
     <h2 id="ai-title"></h2>
     <div id="ai-body"></div>
+  </aside>
+
+  <button class="chat-fab" id="chat-fab" type="button" aria-controls="chat-panel" aria-expanded="false" hidden>
+    <svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg><span>Une question&nbsp;?</span>
+  </button>
+  <aside class="ai-panel chat-panel" id="chat-panel" role="dialog" aria-modal="false" aria-labelledby="chat-title" hidden>
+    <div class="ai-head">
+      <span class="ai-badge"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg>Une question&nbsp;?</span>
+      <button class="icon-btn" id="chat-close" type="button" aria-label="Fermer le chat"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <h2 id="chat-title">Posez votre question sur la démo</h2>
+    <p class="chat-context" id="chat-context" hidden></p>
+    <div class="chat-log" id="chat-log" aria-live="polite"></div>
+    <div class="chat-suggest" id="chat-suggest"></div>
+    <form class="chat-form" id="chat-form">
+      <label class="visually-hidden" for="chat-input">Votre question</label>
+      <textarea id="chat-input" rows="2" maxlength="500" placeholder="Votre question… (Entrée pour envoyer)"></textarea>
+      <button type="submit" class="chat-send" id="chat-send" aria-label="Envoyer la question"><svg class="ico" aria-hidden="true"><use href="#i-send"/></svg></button>
+    </form>
+    <p class="ai-source">Réponses d'un modèle de langue, appuyées sur les seules données de la démo ; chaque nombre cité est vérifié automatiquement. Les questions ne sont pas conservées.</p>
   </aside>
 </body>
 </html>

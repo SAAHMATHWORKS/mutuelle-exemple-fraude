@@ -170,12 +170,13 @@ def test_explain_gives_a_commentary_per_chart(client):
         assert {"id", "title", "see", "why", "limit", "facts"} <= set(it)
 
 
-def test_explain_one_chart_without_model_is_static(client):
-    body = client.get("/api/explain").json()
-    assert body["dynamic"] is False  # no LLM_* variable in the tests
-    one = client.get("/api/explain/volume").json()
-    assert one["source"]["kind"] == "static" and one["fallback"] is False and one["item"]["id"] == "volume"
-    assert client.get("/api/explain/nope").status_code == 404
+def test_chat_is_off_without_a_model(client):
+    assert client.get("/api/explain").json()["chat"] is False  # no LLM_* variable in the tests
+    assert client.get("/health").json()["chat"] == "off"
+    r = client.post("/api/chat", json={"question": "Comment marche la règle de prix ?"})
+    assert r.status_code == 503
+    assert client.post("/api/chat", json={"question": "x"}).status_code == 422
+    assert client.post("/api/chat", json={"question": "y" * 501}).status_code == 422
 
 
 def test_client_log_accepts_small_reports_only(client):

@@ -67,7 +67,7 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/providers
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/model
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/explain
-          curl -fsS http://127.0.0.1:7860/api/explain/volume | grep -q '"kind":"static"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"question":"Bonjour ?"}' http://127.0.0.1:7860/api/chat)" = 503
 
       - name: Show server log on failure
         if: failure()

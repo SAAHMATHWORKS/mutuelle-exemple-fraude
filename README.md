@@ -252,7 +252,15 @@ Each of the 28 charts has a **✦ Lecture IA** button. It opens a side panel wit
 
 - **Today: static, no API key.** The texts were written by an AI assistant as templates, reviewed, and filled with the chart's own data (`app/narratives.py`, served by `GET /api/explain`). They change when the data changes.
 - **No invented figure.** `tests/test_narratives.py` removes every recorded fact from each text and fails if any digit is left, so a commentary can only quote numbers that come from the data.
-- **Optional: written by a language model on the server** (`app/llm_explain.py`, `GET /api/explain/{chart_id}`). Set `LLM_PROVIDER` (`openai` for any OpenAI-compatible API, or `anthropic`), `LLM_API_KEY` and `LLM_MODEL` in the server's `.env` (see `.env.example`). The model only receives the chart title, its facts and the reviewed static reading. Every number in its answer must be one of those facts: otherwise it is retried once, then dropped for the static text. One call per chart and dataset (cached), a daily budget, a 24 s time limit per chart (retry included), and the static text whenever anything fails. The key stays on the server: never in the repository, the image, the browser or the logs. The panel says which version the reader sees.
+- **Instant.** The commentaries are computed with the data (and stored in the showcase snapshot), so the panel opens at once, with or without a model.
+
+### « Une question ? » chat (optional)
+
+When the server has a language model configured, a **Une question ?** button opens a chat, and each « Lecture IA » panel offers « Poser une question sur ce graphique ». Configuration: `LLM_PROVIDER` (`openai` for any OpenAI-compatible API, or `anthropic`), `LLM_API_KEY` and `LLM_MODEL` in the server's `.env` (see `.env.example`); without them there is no chat button and the demo calls no external service.
+
+- **Grounded.** The model (`app/llm_chat.py`, `POST /api/chat`) only receives public facts about the demo: the dataset summary, the five rules and the reviewed chart commentaries, with the chart the visitor is looking at marked first. Never claim rows, never the key.
+- **No invented figure.** Every number of an answer must appear in that context or in the visitor's question; otherwise the answer is retried once, then replaced by a sentence saying it could not be checked.
+- **Bounded.** 24 s per question (retry included), 4 s between two questions of a visitor, 30 questions a minute overall, a daily budget of model calls. Questions are not logged. The key stays on the server: never in the repository, the image, the browser or the logs.
 
 **Accessibility.** Every text on every view meets the WCAG AA contrast ratio in the light and dark themes (checked with an automated audit of the rendered pages); each chart has a text description and most have a « Voir les données en tableau » table; controls are native buttons and links, and Escape closes the menu and the side panel.
 

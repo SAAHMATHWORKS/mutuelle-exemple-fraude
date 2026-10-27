@@ -21,7 +21,7 @@ services:
       - "127.0.0.1:${DEMO_HOST_PORT:-8020}:7860"
     environment:
       PORT: "7860"
-      # « Lecture IA » by a language model, called from the server (optional; off when empty).
+      # « Une question ? » chat answered by a language model, called from the server (optional; off when empty).
       # Values come from the .env file next to this file, which is never committed nor copied
       # into the image (see .gitignore and .dockerignore). Keep it private: chmod 600 .env
       LLM_PROVIDER: "${LLM_PROVIDER:-}"

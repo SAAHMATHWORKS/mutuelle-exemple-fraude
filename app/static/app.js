@@ -1979,7 +1979,6 @@
   const aiTitle = document.getElementById("ai-title");
   const aiBody = document.getElementById("ai-body");
   let aiOpener = null;
-  let aiRequest = 0;
 
   async function loadExplain(key) {
     if (!explainCache || (key && !explainCache.items[key])) explainCache = await api("/api/explain");
@@ -2000,47 +1999,29 @@
     aiOpener = opener;
     aiTitle.textContent = opener?.dataset.title || "Lecture IA";
     aiBody.innerHTML = `<p class="ai-thinking"><span></span><span></span><span></span> Lecture du graphique…</p>`;
+    closeChat(false);
     aiPanel.hidden = false;
     document.body.classList.add("ai-open");
     requestAnimationFrame(() => aiPanel.classList.add("show"));
     document.querySelectorAll(".ai-btn[aria-expanded='true']").forEach((b) => b.setAttribute("aria-expanded", "false"));
     opener?.setAttribute("aria-expanded", "true");
     document.getElementById("ai-close").focus();
-    const token = (aiRequest += 1);
     try {
       const data = await loadExplain(key);
-      let it = data.items[key];
-      let source = data.source;
+      const it = data.items[key];
       if (!it) { aiBody.innerHTML = `<p class="sub">Pas encore de commentaire pour ce graphique.</p>`; return; }
-      if (data.dynamic) {
-        // A language model on the server rewrites the reading; its numbers are checked there.
-        // Slow or failed call: keep the reviewed static text.
-        const thinking = aiBody.querySelector(".ai-thinking");
-        if (thinking) thinking.lastChild.textContent = " Le modèle lit le graphique…";
-        try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 30000);
-          const res = await api(`/api/explain/${encodeURIComponent(key)}`, { signal: ctrl.signal });
-          clearTimeout(timer);
-          it = res.item;
-          source = res.source;
-        } catch { /* static text below */ }
-      }
-      if (token !== aiRequest || aiPanel.hidden) return; // another chart was opened meanwhile
       aiTitle.textContent = it.title;
       const block = (cls, label, text) => `<section class="ai-sec ${cls}"><h3>${label}</h3><p>${highlightFacts(text, it.facts)}</p></section>`;
-      const badge = source.kind === "llm"
-        ? `<p class="ai-kind live"><span class="dot" aria-hidden="true"></span>Généré à la demande · chiffres vérifiés</p>`
-        : `<p class="ai-kind">Version statique relue</p>`;
       aiBody.innerHTML = `
-        ${badge}
         ${block("ai-see", "Ce qu'on voit", it.see)}
         ${block("ai-why", "Pourquoi c'est important", it.why)}
         ${block("ai-limit", "Limite", it.limit)}
         <section class="ai-sec ai-facts"><h3>Chiffres utilisés</h3>
           <p class="sub">Tous viennent des données du graphique ; aucun n'est inventé.</p>
           <ul class="fact-list">${[...new Set(it.facts)].map((f) => `<li>${esc(f)}</li>`).join("")}</ul></section>
-        <p class="ai-source">${esc(source.label)}</p>`;
+        ${data.chat ? `<button type="button" class="ask-btn" id="ai-ask"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg>Poser une question sur ce graphique</button>` : ""}
+        <p class="ai-source">${esc(data.source.label)}</p>`;
+      document.getElementById("ai-ask")?.addEventListener("click", () => openChat({ id: key, title: it.title }));
     } catch (e) {
       aiBody.innerHTML = `<p class="error">${esc(e.message)}</p>`;
     }
@@ -2053,6 +2034,107 @@
     document.querySelectorAll(".ai-btn[aria-expanded='true']").forEach((b) => b.setAttribute("aria-expanded", "false"));
     if (restoreFocus && aiOpener && document.contains(aiOpener)) aiOpener.focus();
   }
+  // -------------------------------------------------------- « Une question ? »
+  // A chat answered by a language model on the server, only when the server has one configured.
+  // Each answer may only quote numbers found in the demo's data; the server checks it.
+  const chatPanel = document.getElementById("chat-panel");
+  const chatFab = document.getElementById("chat-fab");
+  const chatLog = document.getElementById("chat-log");
+  const chatInput = document.getElementById("chat-input");
+  const chatCtx = document.getElementById("chat-context");
+  const chatSuggest = document.getElementById("chat-suggest");
+  const chatHistory = [];
+  const SUGGESTIONS = [
+    "Comment fonctionne la règle du prix gonflé ?",
+    "Pourquoi trier les alertes par montant ?",
+    "Que montre le bilan économique ?",
+    "Pourquoi des règles plutôt qu'un modèle ?",
+  ];
+  let chatEnabled = false;
+  let chatChart = null;
+  let chatOpener = null;
+  let chatBusy = false;
+
+  function renderChatContext() {
+    chatCtx.hidden = !chatChart;
+    if (!chatChart) return;
+    chatCtx.innerHTML = `À propos du graphique <strong>${esc(chatChart.title)}</strong> <button type="button" class="link-btn" id="chat-ctx-clear">retirer</button>`;
+    document.getElementById("chat-ctx-clear").addEventListener("click", () => { chatChart = null; renderChatContext(); chatInput.focus(); });
+  }
+  function renderSuggestions() {
+    chatSuggest.innerHTML = chatHistory.length ? "" : `<p class="chat-hello">Bonjour ! Je réponds aux questions sur cette démo : les règles, les chiffres, la méthode. Quelques idées :</p>`
+      + SUGGESTIONS.map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join("");
+    chatSuggest.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => sendChat(b.textContent)));
+  }
+  function addChatMessage(role, text, facts = [], checked = true) {
+    const el = document.createElement("div");
+    el.className = `msg ${role}${checked ? "" : " unchecked"}`;
+    const html = role === "assistant" ? highlightFacts(text, facts) : esc(text);
+    el.innerHTML = html.replace(/\n/g, "<br>");
+    chatLog.append(el);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return el;
+  }
+  function openChat(chart = null) {
+    if (!chatEnabled) return;
+    if (chart) chatChart = chart;
+    chatOpener = document.activeElement;
+    closeExplain(false);
+    chatPanel.hidden = false;
+    requestAnimationFrame(() => chatPanel.classList.add("show"));
+    chatFab.hidden = true;
+    chatFab.setAttribute("aria-expanded", "true");
+    renderChatContext();
+    renderSuggestions();
+    chatInput.focus();
+  }
+  function closeChat(restoreFocus = true) {
+    if (chatPanel.hidden) return;
+    chatPanel.classList.remove("show");
+    chatPanel.hidden = true;
+    chatFab.hidden = !chatEnabled;
+    chatFab.setAttribute("aria-expanded", "false");
+    if (restoreFocus) (chatOpener && document.contains(chatOpener) ? chatOpener : chatFab).focus();
+  }
+  async function sendChat(question) {
+    const q = question.trim();
+    if (chatBusy || q.length < 2) return;
+    chatBusy = true;
+    document.getElementById("chat-send").disabled = true;
+    chatInput.value = "";
+    chatSuggest.innerHTML = "";
+    addChatMessage("user", q);
+    const typing = document.createElement("p");
+    typing.className = "ai-thinking";
+    typing.innerHTML = "<span></span><span></span><span></span> Réflexion…";
+    chatLog.append(typing);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    try {
+      const res = await api("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, chart_id: chatChart ? chatChart.id : null, history: chatHistory.slice(-6) }),
+      });
+      typing.remove();
+      addChatMessage("assistant", res.answer, res.facts, res.checked);
+      chatHistory.push({ role: "user", text: q }, { role: "assistant", text: res.answer });
+    } catch (e) {
+      typing.remove();
+      addChatMessage("error", e.message);
+    }
+    chatBusy = false;
+    document.getElementById("chat-send").disabled = false;
+    chatInput.focus();
+  }
+  document.getElementById("chat-form").addEventListener("submit", (e) => { e.preventDefault(); sendChat(chatInput.value); });
+  chatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(chatInput.value); }
+  });
+  chatFab.addEventListener("click", () => openChat());
+  document.getElementById("chat-close").addEventListener("click", () => closeChat());
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !chatPanel.hidden) closeChat(); });
+  loadExplain().then((d) => { chatEnabled = Boolean(d.chat); chatFab.hidden = !chatEnabled; }).catch(() => {});
+
   document.getElementById("ai-close").addEventListener("click", () => closeExplain());
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !aiPanel.hidden) closeExplain(); });
 

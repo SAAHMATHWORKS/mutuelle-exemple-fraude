@@ -21,9 +21,9 @@ from pydantic import BaseModel, Field
 from app.catalog import ACTS, DECISIONS, DIAGNOSES, INSURER_NAME, PROVIDER_TYPES, SCENARIOS
 from app.detectors.price import price_history
 from app.generator import MAX_SIZE, MIN_SIZE, N_DAYS, PERIOD_START
-from app.llm_explain import Explainer
+from app.llm_chat import ChatAssistant, ChatUnavailable, build_context
 from app.rules_doc import rules as rules_doc
-from app.state import state
+from app.state import RateLimiter, state
 
 STATIC_DIR = Path(__file__).parent / "static"
 VERSIONED_ASSETS = ("styles.css", "vendor/chart.umd.min.js", "app.js")
@@ -70,8 +70,8 @@ app = FastAPI(
 )
 
 
-# Server-side language model for « Lecture IA »: None (static texts) unless LLM_* variables are set.
-explainer = Explainer.from_env()
+# Server-side language model for the « Une question ? » chat: None (no chat) unless LLM_* variables are set.
+assistant = ChatAssistant.from_env()
 
 
 @app.middleware("http")
@@ -94,7 +94,7 @@ class Health(BaseModel):
     mode: Literal["live", "vitrine"]
     claims: int
     alerts: int
-    explain: Literal["static", "llm"]
+    chat: Literal["off", "llm"]
 
 
 class ClientLog(BaseModel):
@@ -207,7 +207,7 @@ def health() -> dict:
         "mode": state.mode,
         "claims": len(r.dataset.claims),
         "alerts": len(r.alerts),
-        "explain": "llm" if explainer is not None else "static",
+        "chat": "llm" if assistant is not None else "off",
     }
 
 
@@ -484,28 +484,56 @@ def client_log(entry: ClientLog) -> Response:
 
 @app.get("/api/explain")
 def explain() -> dict:
-    """« Lecture IA » commentaries for the charts (static provider; see app/narratives.py).
+    """« Lecture IA » commentaries for the charts (static, reviewed; see app/narratives.py).
 
-    ``dynamic`` tells the page whether /api/explain/{chart_id} asks a language model on the server.
+    ``chat`` tells the page whether the « Une question ? » chat is available.
     """
     r = state.current()
-    return {"dataset": _dataset_meta(), "dynamic": explainer is not None, **r.get_narratives()}
+    return {"dataset": _dataset_meta(), "chat": assistant is not None, **r.get_narratives()}
 
 
-@app.get("/api/explain/{chart_id}")
-def explain_one(chart_id: str) -> dict:
-    """One chart's reading: the server-side model's when configured and checked, else the static one."""
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str = Field(max_length=1500)
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+    chart_id: str | None = Field(None, max_length=30)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=8)
+
+
+chat_limiter = RateLimiter(per_client_seconds=4, global_per_minute=30)
+
+
+@app.post("/api/chat")
+def chat(body: ChatRequest, request: Request) -> JSONResponse:
+    """« Une question ? »: an answer from the server-side model, grounded on the demo's public facts."""
+    if assistant is None:
+        return JSONResponse({"detail": "Le chat n'est pas activé sur cette instance."}, status_code=503)
+    client = (
+        request.headers.get("cf-connecting-ip", "").strip()
+        or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
+    wait = chat_limiter.check(client)
+    if wait > 0:
+        return JSONResponse(
+            {"detail": "Encore un instant avant la prochaine question."},
+            status_code=429,
+            headers={"Retry-After": str(math.ceil(wait))},
+        )
     r = state.current()
-    narratives = r.get_narratives()
-    item = narratives["items"].get(chart_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Pas de commentaire pour ce graphique.")
-    if explainer is not None:
-        d = r.dataset
-        dynamic = explainer.explain(f"{d.seed}-{d.size}-{d.noise_level}", item)
-        if dynamic is not None:
-            return {"item": dynamic, "source": explainer.source, "fallback": False}
-    return {"item": item, "source": narratives["source"], "fallback": explainer is not None}
+    context = build_context(_dataset_meta(), rules_doc(), r.get_narratives(), body.chart_id)
+    history = [t.model_dump() for t in body.history][-6:]
+    try:
+        out = assistant.ask(body.question.strip(), history, context)
+    except ChatUnavailable:
+        return JSONResponse(
+            {"detail": "Le chat ne peut pas répondre pour le moment. La « Lecture IA » de chaque graphique reste disponible."},
+            status_code=503,
+        )
+    return JSONResponse({**out, "source": assistant.source})
 
 
 @app.get("/api/exploration")
