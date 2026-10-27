@@ -183,6 +183,7 @@
     } catch (e) {
       view.innerHTML = `<div class="card"><h1>Impossible de charger la page</h1><p class="error">${esc(e.message)}</p><p><a href="#/vue-ensemble">Revenir à la vue d'ensemble</a></p></div>`;
     }
+    checkCharts();
   }
   window.addEventListener("hashchange", () => { route(); document.getElementById("main").focus({ preventScroll: true }); window.scrollTo(0, 0); });
 
@@ -2089,18 +2090,88 @@
     requestAnimationFrame(() => { decorateQueued = false; decorateCharts(); });
   }).observe(view, { childList: true, subtree: true });
 
-  // Render as soon as Chart.js is there (scripts may arrive in any order behind a CDN). If it is
-  // slow, render the text after 3 s anyway, then redraw by itself the moment the library arrives,
-  // so a visitor never has to reload the page.
+  // ------------------------------------------------------ self-repair
+  // The visitor should never have to reload. Two things can go wrong on the way through a CDN:
+  // Chart.js arrives broken or not at all, or a view ends up with charts that were not drawn.
+  // The page repairs both by itself, and reports what happened to the server log
+  // (docker logs mutuelle-exemple-fraude | grep client-log) so the cause can be fixed at the source.
+  const chartTag = document.querySelector('script[src*="chart.umd.min.js"]');
+  const chartSrc = chartTag ? chartTag.getAttribute("src") : "/static/vendor/chart.umd.min.js";
+  let reports = 0;
+  function report(event, detail = {}) {
+    if (reports >= 8) return;
+    reports += 1;
+    const body = JSON.stringify({ event, view: currentView, t: Math.round(performance.now()), ua: navigator.userAgent.slice(0, 200), detail });
+    try {
+      const sent = navigator.sendBeacon && navigator.sendBeacon("/api/client-log", new Blob([body], { type: "application/json" }));
+      if (!sent) fetch("/api/client-log", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+    } catch { /* reporting must never break the page */ }
+  }
+  function chartTiming() {
+    const e = performance.getEntriesByType("resource").filter((r) => r.name.includes("chart.umd.min.js")).pop();
+    return e ? { status: e.responseStatus ?? null, transfer: e.transferSize, encoded: e.encodedBodySize, decoded: e.decodedBodySize, ms: Math.round(e.duration), proto: e.nextHopProtocol } : "no-entry";
+  }
+  async function probeChart() {
+    try {
+      const r = await fetch(chartSrc, { cache: "no-store" });
+      const text = await r.text();
+      return { status: r.status, type: r.headers.get("content-type"), length: text.length, head: text.slice(0, 30).replace(/\s+/g, " "), cache: r.headers.get("cf-cache-status") };
+    } catch (e) { return { error: String(e).slice(0, 100) }; }
+  }
+  let chartAttempts = 0;
+  function reloadChart() {
+    if (window.Chart || chartAttempts >= 3) return;
+    chartAttempts += 1;
+    const tag = document.createElement("script");
+    tag.src = `${chartSrc}${chartSrc.includes("?") ? "&" : "?"}retry=${chartAttempts}`; // a new URL skips a broken cached copy
+    tag.setAttribute("data-cfasync", "false");
+    tag.onload = () => {
+      if (window.Chart) { report("chart-reloaded", { attempt: chartAttempts }); onChartReady(); }
+      else setTimeout(reloadChart, 1000 * chartAttempts);
+    };
+    tag.onerror = () => setTimeout(reloadChart, 1000 * chartAttempts);
+    document.head.append(tag);
+  }
+
+  // After each view: every canvas must hold a drawn chart. If not, resize, then redraw the view once.
+  let checkTimer = null;
+  let repairedHash = null;
+  function checkCharts() {
+    clearTimeout(checkTimer);
+    const hash = location.hash;
+    checkTimer = setTimeout(() => {
+      if (hash !== location.hash || !window.Chart) return;
+      const canvases = [...view.querySelectorAll("canvas")];
+      canvases.forEach((c) => { const ch = Chart.getChart(c); if (ch && (ch.width < 10 || ch.height < 10)) ch.resize(); });
+      const missing = canvases.filter((c) => !Chart.getChart(c)).length;
+      const flat = canvases.filter((c) => { const ch = Chart.getChart(c); return ch && (ch.width < 10 || ch.height < 10); }).length;
+      const placeholders = view.querySelectorAll(".chart-missing").length;
+      if (!missing && !flat && !placeholders) return;
+      report("charts-not-drawn", { canvases: canvases.length, missing, flat, placeholders, visible: document.visibilityState, repaired: repairedHash === hash });
+      if (repairedHash !== hash) { repairedHash = hash; route(); }
+    }, 2500);
+  }
+  // A page opened in a background tab is laid out when it becomes visible: resize the charts then.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && window.Chart) Object.values(Chart.instances).forEach((c) => c.resize());
+  });
+
   let firstRender = false;
   const start = () => { if (!firstRender) { firstRender = true; route(); } };
-  (function waitForChart(waited) {
-    if (window.Chart) {
-      if (!firstRender) start();
-      else if (document.querySelector("#view .chart-missing")) route(); // late arrival: redraw the charts
-      return;
-    }
-    if (waited === 3000) start();
-    if (waited < 60000) setTimeout(() => waitForChart(waited + 100), 100);
-  })(0);
+  function onChartReady() {
+    if (!firstRender) start();
+    else if (document.querySelector("#view .chart-missing")) route(); // late arrival: draw the charts now
+  }
+  // Deferred scripts run in order, so Chart.js has normally run before this file. If it has not,
+  // its download failed or was cut: show the text at once, report, and load it again.
+  if (window.Chart) start();
+  else {
+    start();
+    probeChart().then((probe) => report("chart-missing-at-start", { timing: chartTiming(), probe }));
+    (function waitForChart(waited) {
+      if (window.Chart) { onChartReady(); return; }
+      if (waited === 1500) reloadChart();
+      if (waited < 60000) setTimeout(() => waitForChart(waited + 100), 100);
+    })(0);
+  }
 })();

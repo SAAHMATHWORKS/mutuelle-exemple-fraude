@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import math
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -91,6 +95,16 @@ class Health(BaseModel):
     claims: int
     alerts: int
     explain: Literal["static", "llm"]
+
+
+class ClientLog(BaseModel):
+    """What a visitor's page reports when it had to repair itself (no personal data)."""
+
+    event: str = Field(max_length=40, pattern=r"^[a-z0-9-]+$")
+    view: str = Field("", max_length=20)
+    t: int = Field(0, ge=0, le=10_000_000)
+    ua: str = Field("", max_length=200)
+    detail: dict = Field(default_factory=dict)
 
 
 class RegenerateRequest(BaseModel):
@@ -445,6 +459,27 @@ def model_view() -> dict:
     if "error" in m:
         return {"status": "error", "error": m["error"]}
     return {"status": "ready", "dataset": _dataset_meta(), **m}
+
+
+client_log_store = logging.getLogger("app.client")
+_client_log_lock = threading.Lock()
+_client_log_times: list[float] = []
+CLIENT_LOG_PER_MINUTE = 30
+
+
+@app.post("/api/client-log", status_code=204, include_in_schema=False)
+def client_log(entry: ClientLog) -> Response:
+    """Self-repair reports from the page, written to the server log (``docker logs ... | grep client-log``)."""
+    now = time.monotonic()
+    with _client_log_lock:
+        _client_log_times[:] = [t for t in _client_log_times if now - t < 60]
+        if len(_client_log_times) >= CLIENT_LOG_PER_MINUTE:
+            return Response(status_code=204)
+        _client_log_times.append(now)
+    detail = json.dumps(entry.detail, ensure_ascii=False, default=str)[:1500]
+    record = {"event": entry.event, "view": entry.view, "t_ms": entry.t, "ua": entry.ua, "detail": detail}
+    client_log_store.warning("client-log %s", json.dumps(record, ensure_ascii=False))
+    return Response(status_code=204)
 
 
 @app.get("/api/explain")

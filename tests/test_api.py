@@ -176,3 +176,11 @@ def test_explain_one_chart_without_model_is_static(client):
     one = client.get("/api/explain/volume").json()
     assert one["source"]["kind"] == "static" and one["fallback"] is False and one["item"]["id"] == "volume"
     assert client.get("/api/explain/nope").status_code == 404
+
+
+def test_client_log_accepts_small_reports_only(client):
+    report = {"event": "charts-not-drawn", "view": "overview", "t": 1200, "detail": {"missing": 2}}
+    ok = client.post("/api/client-log", json=report)
+    assert ok.status_code == 204
+    assert client.post("/api/client-log", json={"event": "Bad Event!"}).status_code == 422
+    assert client.post("/api/client-log", json={"event": "x" * 41}).status_code == 422
