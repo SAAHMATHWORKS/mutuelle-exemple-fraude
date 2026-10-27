@@ -51,7 +51,7 @@ try:
     class Deps:
         seen: list = field(default_factory=list)
 
-    agent = Agent(deps_type=Deps, instructions="Tu réponds en français.", output_type=str, output_retries=1)
+    agent = Agent(deps_type=Deps, instructions="Tu réponds en français.", output_type=str, retries=1)
 
     @agent.tool
     def count_alerts(ctx: RunContext[Deps], scenario: int | None = None) -> dict:
@@ -87,8 +87,11 @@ def fn(messages, info):
 async def main():
     try:
         deps = Deps()
-        r = await agent.run("Combien ?", deps=deps, model=FunctionModel(fn))
+        from pydantic_ai.usage import UsageLimits
+
+        r = await agent.run("Combien ?", deps=deps, model=FunctionModel(fn), usage_limits=UsageLimits(request_limit=6), timeout=20)
         note(f"run ok: output={r.output!r} usage={r.usage()} calls={calls['n']} seen={deps.seen}")
+        note("result attrs: " + ", ".join(a for a in ["output", "usage", "all_messages", "new_messages"] if hasattr(r, a)))
     except Exception:
         err("run")
     try:
@@ -109,7 +112,7 @@ async def main():
 
         m = OpenAIChatModel("some-model", provider=OpenAIProvider(api_key="test", base_url="http://127.0.0.1:9/v1"))
         try:
-            await asyncio.wait_for(agent.run("x", deps=Deps(), model=m, model_settings={"timeout": 2}), 5)
+            await agent.run("x", deps=Deps(), model=m, model_settings={"timeout": 2}, timeout=5)
         except Exception as exc:
             note(f"unreachable provider raises {type(exc).__module__}.{type(exc).__name__}")
     except Exception:
