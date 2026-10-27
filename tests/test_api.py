@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -157,6 +159,12 @@ def test_explain_gives_a_commentary_per_chart(client):
     assert r.status_code == 200
     body = r.json()
     assert body["source"]["kind"] == "static"
-    assert {"volume", "gain", "m-overlap", "net"} <= set(body["items"])
+    assert {"volume", "amounts", "net"} <= set(body["items"])  # available at once
+    # Evaluation and model commentaries follow once the background work is done.
+    deadline = time.monotonic() + 180
+    while client.get("/api/model").json()["status"] == "computing" and time.monotonic() < deadline:
+        time.sleep(0.5)
+    body = client.get("/api/explain").json()
+    assert {"gain", "sevcal", "m-overlap"} <= set(body["items"])
     for it in body["items"].values():
         assert {"id", "title", "see", "why", "limit", "facts"} <= set(it)
