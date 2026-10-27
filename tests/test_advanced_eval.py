@@ -1,3 +1,5 @@
+import itertools
+
 import pytest
 
 from app.advanced_eval import SWEEPS, advanced
@@ -70,3 +72,27 @@ def test_gain_curves_are_cumulative_and_bounded_by_the_ideal_order(adv):
 def test_high_severity_alerts_are_more_often_right(adv):
     share = {s["severity"]: s["share_true"] for s in adv["severity"]}
     assert share["haute"] > share["moyenne"] > share["faible"]
+
+
+def test_economics_cumulative_euros_and_optimum(adv):
+    from app.advanced_eval import best_net
+
+    eco = adv["economics"]
+    n = eco["alerts"]
+    for series in eco["cum_fraud_eur"].values():
+        assert len(series) == n + 1 and series[0] == 0
+        assert all(b >= a for a, b in itertools.pairwise(series))
+        assert series[-1] <= eco["fraud_total"] + 0.01
+    # every order ends with the same fraud found (all alerts handled)
+    ends = {round(s[-1], 2) for s in eco["cum_fraud_eur"].values()}
+    assert len(ends) == 1
+    d = eco["defaults"]
+    for name, best in eco["best"].items():
+        cum = eco["cum_fraud_eur"][name]
+        nets = [d["recovery_rate"] * f - d["cost_per_alert"] * k for k, f in enumerate(cum)]
+        assert best["net"] == pytest.approx(max(nets), abs=0.01)
+        assert best["net"] >= best["net_all"] and best["net"] >= 0
+    # free investigations: handle everything; prohibitive ones: handle nothing
+    cum = eco["cum_fraud_eur"]["amount"]
+    assert best_net(cum, eco["fraud_total"], 0.0, 1.0)["k"] == cum.index(max(cum))
+    assert best_net(cum, eco["fraud_total"], 1e9, 1.0)["k"] == 0

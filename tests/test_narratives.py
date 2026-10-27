@@ -34,6 +34,7 @@ EXPECTED = {
     "cm",
     "gain",
     "sevcal",
+    "eco",
     "m-recall",
     "m-pr",
     "m-overlap",

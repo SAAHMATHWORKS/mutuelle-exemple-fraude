@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from app.catalog import ACTS, DECISIONS, DIAGNOSES, INSURER_NAME, PROVIDER_TYPES, SCENARIOS
 from app.detectors.price import price_history
 from app.generator import MAX_SIZE, MIN_SIZE, N_DAYS, PERIOD_START
+from app.llm_explain import Explainer
 from app.rules_doc import rules as rules_doc
 from app.state import state
 
@@ -65,6 +66,10 @@ app = FastAPI(
 )
 
 
+# Server-side language model for « Lecture IA »: None (static texts) unless LLM_* variables are set.
+explainer = Explainer.from_env()
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -85,6 +90,7 @@ class Health(BaseModel):
     mode: Literal["live", "vitrine"]
     claims: int
     alerts: int
+    explain: Literal["static", "llm"]
 
 
 class RegenerateRequest(BaseModel):
@@ -182,7 +188,13 @@ def _dataset_meta() -> dict:
 @app.get("/health", response_model=Health)
 def health() -> dict:
     r = state.current()
-    return {"status": "ok", "mode": state.mode, "claims": len(r.dataset.claims), "alerts": len(r.alerts)}
+    return {
+        "status": "ok",
+        "mode": state.mode,
+        "claims": len(r.dataset.claims),
+        "alerts": len(r.alerts),
+        "explain": "llm" if explainer is not None else "static",
+    }
 
 
 @app.get("/api/overview")
@@ -437,9 +449,28 @@ def model_view() -> dict:
 
 @app.get("/api/explain")
 def explain() -> dict:
-    """« Lecture IA » commentaries for the charts (static provider; see app/narratives.py)."""
+    """« Lecture IA » commentaries for the charts (static provider; see app/narratives.py).
+
+    ``dynamic`` tells the page whether /api/explain/{chart_id} asks a language model on the server.
+    """
     r = state.current()
-    return {"dataset": _dataset_meta(), **r.get_narratives()}
+    return {"dataset": _dataset_meta(), "dynamic": explainer is not None, **r.get_narratives()}
+
+
+@app.get("/api/explain/{chart_id}")
+def explain_one(chart_id: str) -> dict:
+    """One chart's reading: the server-side model's when configured and checked, else the static one."""
+    r = state.current()
+    narratives = r.get_narratives()
+    item = narratives["items"].get(chart_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Pas de commentaire pour ce graphique.")
+    if explainer is not None:
+        d = r.dataset
+        dynamic = explainer.explain(f"{d.seed}-{d.size}-{d.noise_level}", item)
+        if dynamic is not None:
+            return {"item": dynamic, "source": explainer.source, "fallback": False}
+    return {"item": item, "source": narratives["source"], "fallback": explainer is not None}
 
 
 @app.get("/api/exploration")

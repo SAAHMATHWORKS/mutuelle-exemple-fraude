@@ -471,3 +471,13 @@ mark.fact { background: color-mix(in srgb, var(--accent) 16%, transparent); colo
 .how-head { display: flex; align-items: center; gap: 10px; }
 .how-n { width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 0.85rem;
   border: 2px solid var(--c); color: var(--text); }
+.ai-kind { margin: -4px 0 0; display: inline-flex; align-items: center; gap: 7px; font-size: 0.78rem; font-weight: 600; color: var(--text-3); }
+.ai-kind.live { color: var(--good-ink); }
+.ai-kind .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent); }
+
+/* ----- economic view ----- */
+.eco-controls { display: flex; flex-wrap: wrap; gap: 12px 32px; margin: 8px 0 14px; }
+.eco-controls .slider-block { display: flex; flex-direction: column; gap: 4px; min-width: min(320px, 100%); }
+.eco-controls input[type="range"] { width: min(320px, 100%); accent-color: var(--accent); }
+.eco-tiles { margin-bottom: 12px; }
+.tile .hint { font-size: 0.78rem; color: var(--text-3); }

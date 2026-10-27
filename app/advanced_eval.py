@@ -251,10 +251,67 @@ def severity_calibration(claims: pd.DataFrame, alerts: list[dict]) -> list[dict]
     return out
 
 
+# Illustrative assumptions of the economic view; both are sliders on the page, not facts about any insurer.
+ECON_DEFAULTS = {"cost_per_alert": 40.0, "recovery_rate": 0.8}
+ECON_ORDERS = ("amount", "severity_amount", "chronological")
+
+
+def best_net(cum_fraud: list[float], fraud_total: float, cost_per_alert: float, recovery_rate: float) -> dict:
+    """Number of alerts to handle that maximises recovered fraud minus handling cost (first maximum)."""
+    nets = [recovery_rate * f - cost_per_alert * k for k, f in enumerate(cum_fraud)]
+    k = max(range(len(nets)), key=lambda i: (nets[i], -i))
+    n = len(cum_fraud) - 1
+    return {
+        "k": k,
+        "net": _r(nets[k], 2),
+        "recovered": _r(recovery_rate * cum_fraud[k], 2),
+        "cost": _r(cost_per_alert * k, 2),
+        "missed": _r(fraud_total - cum_fraud[k], 2),
+        "net_all": _r(nets[n], 2),
+    }
+
+
+def economics(claims: pd.DataFrame, alerts: list[dict]) -> dict:
+    """Cumulative fraudulent euros found after k alerts, for each processing order (each line counted once).
+
+    With a handling cost per alert and a recovery rate, the net value of handling the first k alerts is
+    ``rate * found(k) - cost * k``; the page lets the reader move both assumptions.
+    """
+    label = dict(zip(claims.line_id, claims.fraud_scenario, strict=True))
+    amount = dict(zip(claims.line_id, claims.billed_amount, strict=True))
+    fraud_total = float(sum(amount[i] for i, lab in label.items() if lab != 0))
+    orders = {
+        "severity_amount": sorted(alerts, key=lambda a: (-SEVERITY_ORDER[a["severity"]], -a["amount"], a["id"])),
+        "amount": sorted(alerts, key=lambda a: (-a["amount"], a["id"])),
+        "chronological": sorted(alerts, key=lambda a: (a["alert_day"], a["id"])),
+    }
+    cum: dict[str, list[float]] = {}
+    for name in ECON_ORDERS:
+        seen: set[int] = set()
+        found = 0.0
+        series = [0.0]
+        for a in orders[name]:
+            for i in a["line_ids"]:
+                if label[i] != 0 and i not in seen:
+                    seen.add(i)
+                    found += amount[i]
+            series.append(round(found, 2))
+        cum[name] = series
+    d = ECON_DEFAULTS
+    return {
+        "alerts": len(alerts),
+        "fraud_total": _r(fraud_total, 2),
+        "defaults": d,
+        "cum_fraud_eur": cum,
+        "best": {name: best_net(cum[name], fraud_total, d["cost_per_alert"], d["recovery_rate"]) for name in ECON_ORDERS},
+    }
+
+
 def advanced(claims: pd.DataFrame, refs: pd.DataFrame, alerts: list[dict]) -> dict:
     return {
         "sweeps": threshold_sweeps(claims, refs),
         "confusion": confusion(claims, alerts),
         "gain": gain_curves(claims, alerts),
         "severity": severity_calibration(claims, alerts),
+        "economics": economics(claims, alerts),
     }

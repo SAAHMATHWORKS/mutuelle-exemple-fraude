@@ -1451,7 +1451,7 @@
       <div class="page-head"><div><h1>Évaluation</h1>
         <p>Les fraudes ont été injectées par le générateur : on connaît donc la vérité pour chaque ligne. Ces chiffres mesurent la capacité des règles à retrouver ces motifs injectés, pas leur performance sur de vraies fraudes.</p></div></div>
       <nav aria-label="Sections de la page"><ul class="toc">
-        ${[["eval-synthese", "Synthèse"], ["eval-seuils", "Seuils et compromis"], ["eval-matrices", "Matrices de confusion"], ["eval-gain", "Courbe de gain"], ["eval-bruit", "Robustesse au bruit"], ["eval-limites", "Ce qui ne marche pas"]]
+        ${[["eval-synthese", "Synthèse"], ["eval-seuils", "Seuils et compromis"], ["eval-matrices", "Matrices de confusion"], ["eval-gain", "Courbe de gain"], ["eval-eco", "Bilan économique"], ["eval-bruit", "Robustesse au bruit"], ["eval-limites", "Ce qui ne marche pas"]]
           .map(([id, l]) => `<li><a href="#/evaluation" data-jump="${id}">${l}</a></li>`).join("")}
       </ul></nav>
       <section class="grid kpis" aria-label="Chiffres clés de l'évaluation">
@@ -1607,6 +1607,12 @@
     const sweeps = adv.sweeps;
     const cm = adv.confusion;
     const gain = adv.gain;
+    const eco = adv.economics;
+    const ecoOrders = [
+      { key: "amount", label: "Montant décroissant", cls: "alt" },
+      { key: "severity_amount", label: "Sévérité, puis montant", cls: "acc" },
+      { key: "chronological", label: "Ordre d'arrivée", cls: "past" },
+    ];
     const sevLabel = { haute: "Haute", moyenne: "Moyenne", faible: "Faible" };
     const ruleCols = cm.per_rule.map((r) => r.scenario);
     const cellStyle = (share) => {
@@ -1706,7 +1712,22 @@
           <p class="sub" style="margin-top:10px">${pct(adv.severity[0].share_true)} des alertes «&nbsp;haute&nbsp;» sont justes, contre ${pct(adv.severity[2].share_true)} des «&nbsp;faible&nbsp;»&nbsp;: la sévérité classe bien la fiabilité de l'alerte. Elle ne classe pas les montants, d'où l'écart sur la courbe de gain.</p>
           ${dataTable(["Sévérité", "Alertes", "Justes", "Part"], adv.severity.map((x) => [sevLabel[x.severity], nf.format(x.alerts), nf.format(x.true_alerts), pct1(x.share_true)]))}
         </section>
-      </div>`;
+      </div>
+      ${eco ? `<section class="card section" id="eval-eco" aria-labelledby="t-eco">
+        <h2 id="t-eco">Bilan économique : combien d'alertes faut-il traiter ?</h2>
+        <p class="sub">Gain net de l'enquête = montants frauduleux récupérés − coût de traitement des alertes, selon le nombre d'alertes traitées dans l'ordre choisi. Sur l'année, la fraude injectée pèse ${eur0.format(eco.fraud_total)}. Les deux hypothèses ci-dessous sont illustratives : réglez-les.</p>
+        <div class="eco-controls">
+          <div class="slider-block"><label for="eco-cost">Coût de traitement d'une alerte : <strong id="eco-cost-val"></strong></label>
+            <input id="eco-cost" type="range" min="5" max="150" step="5" value="${eco.defaults.cost_per_alert}"></div>
+          <div class="slider-block"><label for="eco-rate">Part des montants frauduleux récupérée : <strong id="eco-rate-val"></strong></label>
+            <input id="eco-rate" type="range" min="0.3" max="1" step="0.05" value="${eco.defaults.recovery_rate}"></div>
+        </div>
+        <div class="tiles eco-tiles" id="eco-tiles"></div>
+        ${legendHtml(ecoOrders.map((x) => ({ cls: x.cls, label: x.label })))}
+        <div class="chart-wrap" style="height:320px"><canvas id="c-eco" role="img" aria-label="Gain net selon le nombre d'alertes traitées, pour chaque ordre de traitement"></canvas></div>
+        <p id="eco-read" class="sub" style="margin-top:10px"></p>
+        <div id="eco-table"></div>
+      </section>` : ""}`;
 
     // precision-recall panels
     for (const sw of sweeps) {
@@ -1797,6 +1818,63 @@
     };
     drawGain();
     document.getElementById("cap").addEventListener("input", (ev) => { capIdx = Number(ev.target.value); drawGain(); });
+
+    // economic view: net value of handling the first k alerts, under two adjustable assumptions
+    if (eco) {
+      const ecoColor = { amount: css("--alt"), severity_amount: css("--accent"), chronological: css("--text-3") };
+      let ecoChart = null;
+      const drawEco = () => {
+        const cost = Number(document.getElementById("eco-cost").value);
+        const rate = Number(document.getElementById("eco-rate").value);
+        document.getElementById("eco-cost-val").textContent = eur0.format(cost);
+        document.getElementById("eco-rate-val").textContent = pct(rate);
+        const res = Object.fromEntries(ecoOrders.map((o) => {
+          const cum = eco.cum_fraud_eur[o.key];
+          const net = cum.map((f, k) => rate * f - cost * k);
+          let k = 0;
+          net.forEach((v, i) => { if (v > net[k]) k = i; });
+          return [o.key, { net, k, best: net[k], all: net[net.length - 1], missed: eco.fraud_total - cum[k], spent: cost * k }];
+        }));
+        const A = res.amount;
+        document.getElementById("eco-tiles").innerHTML = [
+          ["Gain net maximal", eur0.format(A.best), `en traitant les ${nf.format(A.k)} alertes les plus coûteuses`],
+          ["Si l'on traite tout", eur0.format(A.all), `${nf.format(eco.alerts)} alertes, soit ${eur0.format(A.best - A.all)} de moins`],
+          ["Coût des enquêtes", eur0.format(A.spent), `${nf.format(A.k)} alertes × ${eur0.format(cost)}`],
+          ["Fraude restant à charge", eur0.format(A.missed), `${pct(A.missed / Math.max(eco.fraud_total, 1))} de la fraude injectée`],
+        ].map(([l, v, h]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${h}</div></div>`).join("");
+        document.getElementById("eco-read").textContent = A.k === 0
+          ? "Avec ces hypothèses, aucune enquête ne rapporte plus qu'elle ne coûte."
+          : `Au-delà de ${nf.format(A.k)} alertes (tri par montant), chaque alerte de plus coûte plus qu'elle ne rapporte. Par sévérité, l'optimum est à ${nf.format(res.severity_amount.k)} alertes pour ${eur0.format(res.severity_amount.best)} ; dans l'ordre d'arrivée, ${eur0.format(res.chronological.best)}.`;
+        document.getElementById("eco-table").innerHTML = dataTable(["Ordre de traitement", "Alertes à traiter", "Gain net maximal", "Gain net si tout est traité"],
+          ecoOrders.map((o) => [o.label, nf.format(res[o.key].k), eur0.format(res[o.key].best), eur0.format(res[o.key].all)]));
+        const step = Math.max(1, Math.floor(eco.alerts / 300));
+        if (ecoChart) { ecoChart.destroy(); charts = charts.filter((c) => c !== ecoChart); }
+        ecoChart = makeChart(document.getElementById("c-eco"), {
+          type: "line",
+          data: {
+            datasets: ecoOrders.map((o) => ({
+              label: o.label,
+              data: res[o.key].net.map((y, x) => ({ x, y })).filter((p) => p.x % step === 0 || p.x === res[o.key].k || p.x === eco.alerts),
+              borderColor: ecoColor[o.key], backgroundColor: ecoColor[o.key], borderWidth: 2, tension: 0,
+              pointRadius: (ctx) => (ctx.raw && ctx.raw.x === res[o.key].k ? 5 : 0), pointHoverRadius: 4,
+            })),
+          },
+          options: {
+            interaction: { mode: "nearest", axis: "x", intersect: false },
+            scales: {
+              x: { type: "linear", min: 0, max: eco.alerts, title: { display: true, text: "Alertes traitées, dans l'ordre choisi" }, grid: { display: false }, ticks: { precision: 0 } },
+              y: { title: { display: true, text: "Gain net (€)" }, ticks: { callback: (v) => eur0.format(v) }, border: { display: false } },
+            },
+            plugins: {
+              refLine: { lines: [{ value: A.k, label: `Optimum ${nf.format(A.k)}` }] },
+              tooltip: { callbacks: { title: (items) => `${nf.format(items[0].parsed.x)} alertes traitées`, label: (it) => `${it.dataset.label} : ${eur0.format(it.parsed.y)}` } },
+            },
+          },
+        });
+      };
+      drawEco();
+      ["eco-cost", "eco-rate"].forEach((id) => document.getElementById(id).addEventListener("input", drawEco));
+    }
     box.querySelectorAll("[data-gm]").forEach((b) => b.addEventListener("click", () => {
       metric = b.dataset.gm;
       box.querySelectorAll("[data-gm]").forEach((y) => y.setAttribute("aria-pressed", String(y === b)));
@@ -1900,6 +1978,7 @@
   const aiTitle = document.getElementById("ai-title");
   const aiBody = document.getElementById("ai-body");
   let aiOpener = null;
+  let aiRequest = 0;
 
   async function loadExplain(key) {
     if (!explainCache || (key && !explainCache.items[key])) explainCache = await api("/api/explain");
@@ -1926,20 +2005,41 @@
     document.querySelectorAll(".ai-btn[aria-expanded='true']").forEach((b) => b.setAttribute("aria-expanded", "false"));
     opener?.setAttribute("aria-expanded", "true");
     document.getElementById("ai-close").focus();
+    const token = (aiRequest += 1);
     try {
       const data = await loadExplain(key);
-      const it = data.items[key];
+      let it = data.items[key];
+      let source = data.source;
       if (!it) { aiBody.innerHTML = `<p class="sub">Pas encore de commentaire pour ce graphique.</p>`; return; }
+      if (data.dynamic) {
+        // A language model on the server rewrites the reading; its numbers are checked there.
+        // Slow or failed call: keep the reviewed static text.
+        const thinking = aiBody.querySelector(".ai-thinking");
+        if (thinking) thinking.lastChild.textContent = " Le modèle lit le graphique…";
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 30000);
+          const res = await api(`/api/explain/${encodeURIComponent(key)}`, { signal: ctrl.signal });
+          clearTimeout(timer);
+          it = res.item;
+          source = res.source;
+        } catch { /* static text below */ }
+      }
+      if (token !== aiRequest || aiPanel.hidden) return; // another chart was opened meanwhile
       aiTitle.textContent = it.title;
       const block = (cls, label, text) => `<section class="ai-sec ${cls}"><h3>${label}</h3><p>${highlightFacts(text, it.facts)}</p></section>`;
+      const badge = source.kind === "llm"
+        ? `<p class="ai-kind live"><span class="dot" aria-hidden="true"></span>Généré à la demande · chiffres vérifiés</p>`
+        : `<p class="ai-kind">Version statique relue</p>`;
       aiBody.innerHTML = `
+        ${badge}
         ${block("ai-see", "Ce qu'on voit", it.see)}
         ${block("ai-why", "Pourquoi c'est important", it.why)}
         ${block("ai-limit", "Limite", it.limit)}
         <section class="ai-sec ai-facts"><h3>Chiffres utilisés</h3>
           <p class="sub">Tous viennent des données du graphique ; aucun n'est inventé.</p>
           <ul class="fact-list">${[...new Set(it.facts)].map((f) => `<li>${esc(f)}</li>`).join("")}</ul></section>
-        <p class="ai-source">${esc(data.source.label)}</p>`;
+        <p class="ai-source">${esc(source.label)}</p>`;
     } catch (e) {
       aiBody.innerHTML = `<p class="error">${esc(e.message)}</p>`;
     }

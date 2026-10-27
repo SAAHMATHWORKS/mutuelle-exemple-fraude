@@ -224,6 +224,7 @@ The **Évaluation** page goes beyond one recall and one precision per rule:
 - **Which rule catches which fraud.** A matrix of injected scenario × rule shows cross-detection and the fraud that no rule sees, plus a 2 × 2 confusion matrix, F1 and specificity per rule.
 - **Gain curve.** It shows how much of the injected fraud a handler recovers after N alerts, depending on how the queue is sorted. With one alert a day (365 a year), sorting by amount recovers 75 % of the fraudulent euros, against 58 % for severity then amount and 36 % for arrival order.
 - **Severity check.** 92 % of high-severity alerts are right, against 41 % of low-severity ones. Severity ranks reliability, not money.
+- **Economic view (cost of risk).** Net value of the investigations = fraudulent euros recovered − handling cost of the alerts, as a function of how many alerts are handled. Both assumptions are sliders (illustrative defaults: 40 € per alert, 80 % of the detected fraud recovered). With these, handling the 527 most expensive alerts yields 74,200 € net, against 67,684 € when all 919 are handled: past that point, one more alert costs more than it brings back.
 
 ## Providers and network view
 
@@ -247,11 +248,11 @@ The jump from 31 % to 61 % comes from the features, not the algorithm. The model
 
 ## AI reading of the charts (« Lecture IA »)
 
-Each of the 27 charts has a **✦ Lecture IA** button. It opens a side panel with three short parts written for a claims manager: what the chart shows, why it matters, and the limit to keep in mind, followed by the list of numbers the text uses.
+Each of the 28 charts has a **✦ Lecture IA** button. It opens a side panel with three short parts written for a claims manager: what the chart shows, why it matters, and the limit to keep in mind, followed by the list of numbers the text uses.
 
 - **Today: static, no API key.** The texts were written by an AI assistant as templates, reviewed, and filled with the chart's own data (`app/narratives.py`, served by `GET /api/explain`). They change when the data changes.
 - **No invented figure.** `tests/test_narratives.py` removes every recorded fact from each text and fails if any digit is left, so a commentary can only quote numbers that come from the data.
-- **Later: dynamic.** An LLM provider can replace the static one behind the same route and the same response shape. It would be called from the server only, with the key in the server's `.env` (never in the browser, the repository or the image), cached per dataset, rate limited, and its output would go through the same number check before being shown.
+- **Optional: written by a language model on the server** (`app/llm_explain.py`, `GET /api/explain/{chart_id}`). Set `LLM_PROVIDER` (`openai` for any OpenAI-compatible API, or `anthropic`), `LLM_API_KEY` and `LLM_MODEL` in the server's `.env` (see `.env.example`). The model only receives the chart title, its facts and the reviewed static reading. Every number in its answer must be one of those facts: otherwise it is retried once, then dropped for the static text. One call per chart and dataset (cached), a daily budget, a 25 s timeout, and the static text whenever anything fails. The key stays on the server: never in the repository, the image, the browser or the logs. The panel says which version the reader sees.
 
 **Accessibility.** Every text on every view meets the WCAG AA contrast ratio in the light and dark themes (checked with an automated audit of the rendered pages); each chart has a text description and most have a « Voir les données en tableau » table; controls are native buttons and links, and Escape closes the menu and the side panel.
 

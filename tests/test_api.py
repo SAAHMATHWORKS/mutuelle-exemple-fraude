@@ -168,3 +168,11 @@ def test_explain_gives_a_commentary_per_chart(client):
     assert {"gain", "sevcal", "m-overlap"} <= set(body["items"])
     for it in body["items"].values():
         assert {"id", "title", "see", "why", "limit", "facts"} <= set(it)
+
+
+def test_explain_one_chart_without_model_is_static(client):
+    body = client.get("/api/explain").json()
+    assert body["dynamic"] is False  # no LLM_* variable in the tests
+    one = client.get("/api/explain/volume").json()
+    assert one["source"]["kind"] == "static" and one["fallback"] is False and one["item"]["id"] == "volume"
+    assert client.get("/api/explain/nope").status_code == 404

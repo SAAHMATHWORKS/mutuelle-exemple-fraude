@@ -66,6 +66,8 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/evaluation/advanced
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/providers
           curl -fsS -o /dev/null http://127.0.0.1:7860/api/model
+          curl -fsS -o /dev/null http://127.0.0.1:7860/api/explain
+          curl -fsS http://127.0.0.1:7860/api/explain/volume | grep -q '"kind":"static"'
 
       - name: Show server log on failure
         if: failure()

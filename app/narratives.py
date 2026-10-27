@@ -451,6 +451,24 @@ def _evaluation(r) -> list[dict]:
                 "Trier par montant fait traiter d'abord des alertes coûteuses mais moins sûres ; l'idéal combine fiabilité et montant.",
             )
         )
+        eco = adv.get("economics")
+        if eco:
+            d, best = eco["defaults"], eco["best"]["amount"]
+            f = _Facts()
+            out.append(
+                _item(
+                    "eco",
+                    "Bilan économique",
+                    f,
+                    f"Avec un coût de {f.eur(d['cost_per_alert'])} par alerte et {f.pct(d['recovery_rate'])} des montants frauduleux récupérés, "
+                    f"traiter les {f.num(best['k'])} alertes les plus coûteuses rapporte {f.eur(best['net'])} nets, contre {f.eur(best['net_all'])} "
+                    f"en traitant les {f.num(eco['alerts'])}.",
+                    "Au-delà de ce point, une alerte de plus coûte plus qu'elle ne rapporte : c'est le volume d'enquêtes économiquement optimal, "
+                    "qui arbitre entre pertes dues à la fraude et coût des contrôles.",
+                    "Les deux hypothèses sont illustratives et réglables ; le coût réel d'une enquête, les frais de recouvrement et l'effet "
+                    "dissuasif des contrôles déplacent l'optimum.",
+                )
+            )
         sev = adv["severity"]
         f = _Facts()
         out.append(
