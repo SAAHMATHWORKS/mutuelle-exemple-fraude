@@ -242,3 +242,16 @@ details.settings summary { cursor: pointer; font-weight: 600; }
   table.alerts-table td[data-label="Prestataire"] { display: none; }
   table.alerts-table td[data-label="Décision suggérée"] { grid-area: 4 / 1 / 5 / 3; color: var(--text-2); font-size: 0.88rem; }
 }
+
+/* ----- exploration ----- */
+.section-title { font-size: 1.15rem; margin: 28px 0 12px; }
+.section-title:first-of-type { margin-top: 8px; }
+.halves { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 900px) { .halves { grid-template-columns: minmax(0, 1fr); } }
+.card > .card-head h3 { font-size: 1rem; margin-bottom: 4px; }
+.swatch.acc { background: var(--accent); }
+.multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px 16px; margin-top: 8px; }
+.mini { margin: 0; min-width: 0; }
+.mini figcaption { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; margin-bottom: 2px; }
+.mini figcaption .muted { font-size: 0.8rem; white-space: nowrap; }
+@media (max-width: 640px) { .multiples { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .mini figcaption { flex-direction: column; gap: 0; } }

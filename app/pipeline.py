@@ -10,6 +10,7 @@ import pandas as pd
 from app.catalog import SCENARIOS
 from app.detectors import coherence, duplicates, early_claim, nomadism, price
 from app.detectors.base import Alert
+from app.exploration import explore
 from app.generator import N_DAYS, Dataset
 
 
@@ -22,6 +23,13 @@ class Result:
     evaluation: dict
     detect_in_s: float
     claims_by_line: pd.DataFrame = field(repr=False, default=None)
+    exploration: dict | None = field(repr=False, default=None)
+
+    def get_exploration(self) -> dict:
+        """Exploratory aggregates, computed on first use and kept with this result."""
+        if self.exploration is None:
+            self.exploration = explore(self.dataset, self.refs)
+        return self.exploration
 
 
 def run_detectors(claims: pd.DataFrame) -> tuple[pd.DataFrame, list[Alert]]:

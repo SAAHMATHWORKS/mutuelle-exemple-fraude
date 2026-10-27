@@ -83,6 +83,19 @@ def test_evaluation_contract(client):
     assert body["noise_curve"]["status"] in {"computing", "ready"}
 
 
+def test_exploration_contract(client):
+    body = client.get("/api/exploration").json()
+    assert {"dataset", "summary", "portfolio", "signals"} <= body.keys()
+    portfolio_keys = {"amounts", "price_spread", "seasonality", "daily", "provider_mix", "concentration", "age_spend"}
+    assert portfolio_keys == body["portfolio"].keys()
+    assert {"labels", "price", "duplicates", "providers", "coherence", "early"} == body["signals"].keys()
+    assert body["summary"]["n_claims"] == body["dataset"]["n_claims"]
+    for key in ("price", "duplicates", "providers", "early"):
+        sig = body["signals"][key]
+        assert len(sig["legit_share"]) == len(sig["fraud_share"]) == len(sig["legit_counts"])
+        assert {"legit_rule_share", "fraud_rule_share", "n_legit", "n_fraud"} <= sig.keys()
+
+
 def test_regenerate_validates_and_is_rate_limited(client, monkeypatch):
     monkeypatch.setattr(app_state, "limiter", app_state.RateLimiter(per_client_seconds=60, global_per_minute=6))
     assert client.post("/api/regenerate", json={"size": 10_000_000}).status_code == 422

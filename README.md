@@ -70,6 +70,7 @@ flowchart LR
 | `GET /api/overview` | Alerts per day and per scenario, headline numbers |
 | `GET /api/alerts` | Queue with filters (`scenario`, `severity`, `decision`, `q`, `date_from`, `date_to`), sorting and pagination (≤ 100 per page) |
 | `GET /api/alerts/{id}` | Full explanation, evidence rows, price chart data, ground truth (demo only) |
+| `GET /api/exploration` | Exploratory aggregates: amount distribution, price spread per act, seasonality, daily volume, provider mix, Lorenz curves, age versus spend, and each scenario's signal split into legitimate lines and injected fraud |
 | `GET /api/evaluation` | Per-scenario recall and precision, false alerts per day, alert volume per day, and the noise curve |
 | `POST /api/regenerate` | New dataset: `seed`, `size` (2,000 to 50,000) and `noise_level` (0 to 1). Limited to 1 call per 15 s per client and 6 per minute overall. |
 
@@ -77,6 +78,7 @@ The code is organised as follows:
 - `app/generator.py` builds the data.
 - `app/detectors/` holds one module per scenario.
 - `app/pipeline.py` runs the detectors and evaluates them.
+- `app/exploration.py` computes the exploratory analysis shown in the "Exploration des données" view.
 - `app/main.py` serves the API.
 - `app/static/` holds the UI.
 
@@ -123,6 +125,13 @@ Every push runs the same checks on GitHub Actions (`.github/workflows/ci.yml`). 
 
 Optional environment variables change the dataset built at startup: `DEMO_SEED`, `DEMO_SIZE` and `DEMO_NOISE`.
 
+## Exploration view
+
+Before any rule, the **Exploration des données** page looks at the data the way a data scientist would. It has twelve charts, each with a one-line reading and a table view:
+
+- **Portfolio (no labels used):** amount distribution, price spread per act (box plots on a log scale), seasonality by diagnosis group (small multiples), daily volume with a 7-day moving average, line share versus amount share by provider type, Lorenz curves and Gini index for providers and members, and age versus annual spend.
+- **Signals (labels used):** for each scenario, the variable its rule thresholds, with legitimate lines and injected fraud each normalised to 100 %, and the rule's threshold drawn on the chart. The page states that this comparison is only possible because the fraud is synthetic.
+
 ## How it was evaluated
 
 The generator records the true scenario of every line (0 means legitimate), so each detector can be scored exactly:
@@ -163,7 +172,7 @@ The tests prove three things:
 The project is being extended in stages, each one tested before the next:
 
 1. ~~Clean repository with CI~~ (done)
-2. "Exploration des données" view: distributions, seasonality, concentration and fraud-versus-legitimate charts
+2. ~~"Exploration des données" view: distributions, seasonality, concentration and fraud-versus-legitimate charts~~ (done)
 3. Deeper evaluation: precision-recall curves per threshold, confusion matrices, gain curve for the handler's queue
 4. Provider heatmaps, a member–provider network graph, and an unsupervised model shown *only as a comparison* with the rules
 5. Self-hosted deployment behind Nginx, isolated from other services on the same server
@@ -190,8 +199,9 @@ Démo de **détection de fraude santé par scénarios** pour un assureur fictif,
 
 Une règle par scénario lève des alertes. Chacune explique en une phrase pourquoi elle a été levée, montre les lignes concernées et propose une décision au gestionnaire. Le prix de référence n'utilise que des factures antérieures, et un test le prouve.
 
-L'interface en français propose quatre vues :
+L'interface en français propose cinq vues :
 - une vue d'ensemble ;
+- une exploration des données en douze graphiques (distribution des montants, dispersion des prix, saisonnalité, concentration, et pour chaque scénario la variable sur laquelle porte la règle) ;
 - la file d'alertes ;
 - le détail d'une alerte ;
 - une évaluation honnête : rappel, précision, fausses alertes par jour, effet du bruit, et un encadré « Ce qui ne marche pas ».

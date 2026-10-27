@@ -307,6 +307,12 @@ def evaluation() -> dict:
     }
 
 
+@app.get("/api/exploration")
+def exploration() -> dict:
+    r = state.current()
+    return {"dataset": _dataset_meta(), **r.get_exploration()}
+
+
 @app.post("/api/regenerate")
 def regenerate(body: RegenerateRequest, request: Request) -> JSONResponse:
     from app.state import limiter
