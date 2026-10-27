@@ -1,0 +1,18 @@
+name: probe
+on:
+  push:
+    branches: [probe-pydantic-ai]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt && pip freeze | sort > before.txt
+      - run: pip install "pydantic-ai-slim[openai,anthropic]" && pip freeze | sort > after.txt
+      - run: comm -13 before.txt after.txt | tr '\n' ' ' | sed 's/^/::notice title=added::/'; echo; comm -23 before.txt after.txt | tr '\n' ' ' | sed 's/^/::notice title=removed::/'; echo
+      - run: python probe/smoke.py
