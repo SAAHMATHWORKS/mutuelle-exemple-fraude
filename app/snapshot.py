@@ -39,6 +39,7 @@ def build(path: str | Path, seed: int = DEFAULT_SEED, size: int = DEFAULT_SIZE, 
             raise RuntimeError(f"snapshot: {name} failed: {value}")
     result.get_exploration()
     result.get_providers()
+    result.get_narratives()
     curve = AppState().curve(seed, size, background=False)
     if curve.get("status") != "ready":
         raise RuntimeError(f"snapshot: noise curve failed: {curve}")

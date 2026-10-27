@@ -27,6 +27,8 @@
   let advTimer = null;
   let lastQueueHash = "#/alertes";
   let meta = null; // scenarios + decisions labels, loaded once
+  let currentView = "overview";
+  let explainCache = null; // « Lecture IA » commentaries, reloaded after a regeneration
 
   // ---------------------------------------------------------------- storage
   const store = {
@@ -57,6 +59,37 @@
   });
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (theme === "auto") route(); });
   applyTheme();
+
+  // ---------------------------------------------------------------- sidebar
+  // Desktop: collapsible (remembered in this browser). Phone: off-canvas drawer.
+  const mobileQuery = window.matchMedia("(max-width: 900px)");
+  const collapseBtn = document.getElementById("sb-collapse");
+  const openBtn = document.getElementById("sb-open");
+  const backdrop = document.getElementById("sb-backdrop");
+  function setCollapsed(on) {
+    document.body.classList.toggle("sb-collapsed", on);
+    collapseBtn.setAttribute("aria-expanded", String(!on));
+    const label = on ? "Déplier le menu" : "Replier le menu";
+    collapseBtn.title = label;
+    collapseBtn.querySelector(".sb-label").textContent = label;
+  }
+  function setDrawer(open) {
+    document.body.classList.toggle("sb-open", open);
+    backdrop.hidden = !open;
+    openBtn.setAttribute("aria-expanded", String(open));
+    if (open) document.querySelector(".sb-nav a[aria-current='page'], .sb-nav a")?.focus();
+  }
+  setCollapsed(store.get("me-sidebar-collapsed", false));
+  collapseBtn.addEventListener("click", () => {
+    const on = !document.body.classList.contains("sb-collapsed");
+    setCollapsed(on);
+    store.set("me-sidebar-collapsed", on);
+  });
+  openBtn.addEventListener("click", () => setDrawer(true));
+  backdrop.addEventListener("click", () => setDrawer(false));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("sb-open")) { setDrawer(false); openBtn.focus(); } });
+  document.querySelectorAll(".sb-nav a").forEach((a) => a.addEventListener("click", () => { if (mobileQuery.matches) setDrawer(false); }));
+  mobileQuery.addEventListener("change", () => setDrawer(false));
 
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const seriesColor = (n) => css(`--s${n}`);
@@ -100,6 +133,7 @@
 
   // -------------------------------------------------------------------- api
   async function api(path, options) {
+    if (path === "/api/regenerate") explainCache = null;
     const res = await fetch(path, options);
     let body = null;
     try { body = await res.json(); } catch { /* empty body */ }
@@ -127,7 +161,9 @@
     return { parts, params: new URLSearchParams(query || "") };
   }
   function setNav(name) {
-    document.querySelectorAll(".tabs a").forEach((a) => {
+    currentView = name;
+    closeExplain(false);
+    document.querySelectorAll(".sb-nav a").forEach((a) => {
       if (a.dataset.view === name) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     });
@@ -1827,6 +1863,106 @@
     });
     update();
   }
+
+
+  // ---------------------------------------------------------- « Lecture IA »
+  // Each chart that has a commentary gets a « Lecture IA » button next to its title. The text comes
+  // from /api/explain: today a static provider (written from the chart's own numbers, then reviewed);
+  // later, a server-side LLM. Either way every number shown is listed under « Chiffres utilisés ».
+  const AI_VIEWS = new Set(["overview", "exploration", "providers", "evaluation", "model"]);
+  const AI_ALIAS = { evaluation: { sev: "sevcal" }, model: { ov: "m-overlap" } };
+  const aiPanel = document.getElementById("ai-panel");
+  const aiTitle = document.getElementById("ai-title");
+  const aiBody = document.getElementById("ai-body");
+  let aiOpener = null;
+
+  async function loadExplain(key) {
+    if (!explainCache || (key && !explainCache.items[key])) explainCache = await api("/api/explain");
+    return explainCache;
+  }
+  function aiKey(headingId) {
+    const id = headingId.replace(/^t-/, "");
+    return (AI_ALIAS[currentView] || {})[id] || id;
+  }
+  function highlightFacts(text, facts) {
+    let html = esc(text);
+    const list = [...new Set(facts.map(esc))].sort((a, b) => b.length - a.length);
+    if (!list.length) return html;
+    const rx = new RegExp(`(?<![\\d,.])(${list.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?![\\d,])`, "g");
+    return html.replace(rx, '<mark class="fact">$1</mark>');
+  }
+  async function openExplain(key, opener) {
+    aiOpener = opener;
+    aiTitle.textContent = opener?.dataset.title || "Lecture IA";
+    aiBody.innerHTML = `<p class="ai-thinking"><span></span><span></span><span></span> Lecture du graphique…</p>`;
+    aiPanel.hidden = false;
+    document.body.classList.add("ai-open");
+    requestAnimationFrame(() => aiPanel.classList.add("show"));
+    document.querySelectorAll(".ai-btn[aria-expanded='true']").forEach((b) => b.setAttribute("aria-expanded", "false"));
+    opener?.setAttribute("aria-expanded", "true");
+    document.getElementById("ai-close").focus();
+    try {
+      const data = await loadExplain(key);
+      const it = data.items[key];
+      if (!it) { aiBody.innerHTML = `<p class="sub">Pas encore de commentaire pour ce graphique.</p>`; return; }
+      aiTitle.textContent = it.title;
+      const block = (cls, label, text) => `<section class="ai-sec ${cls}"><h3>${label}</h3><p>${highlightFacts(text, it.facts)}</p></section>`;
+      aiBody.innerHTML = `
+        ${block("ai-see", "Ce qu'on voit", it.see)}
+        ${block("ai-why", "Pourquoi c'est important", it.why)}
+        ${block("ai-limit", "Limite", it.limit)}
+        <section class="ai-sec ai-facts"><h3>Chiffres utilisés</h3>
+          <p class="sub">Tous viennent des données du graphique ; aucun n'est inventé.</p>
+          <ul class="fact-list">${[...new Set(it.facts)].map((f) => `<li>${esc(f)}</li>`).join("")}</ul></section>
+        <p class="ai-source">${esc(data.source.label)}</p>`;
+    } catch (e) {
+      aiBody.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+    }
+  }
+  function closeExplain(restoreFocus = true) {
+    if (aiPanel.hidden) return;
+    aiPanel.classList.remove("show");
+    document.body.classList.remove("ai-open");
+    aiPanel.hidden = true;
+    document.querySelectorAll(".ai-btn[aria-expanded='true']").forEach((b) => b.setAttribute("aria-expanded", "false"));
+    if (restoreFocus && aiOpener && document.contains(aiOpener)) aiOpener.focus();
+  }
+  document.getElementById("ai-close").addEventListener("click", () => closeExplain());
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !aiPanel.hidden) closeExplain(); });
+
+  async function decorateCharts() {
+    if (!AI_VIEWS.has(currentView)) return;
+    const heads = [...view.querySelectorAll("h2[id^='t-'], h3[id^='t-']")].filter((h) => !h.dataset.ai);
+    if (!heads.length) return;
+    let data;
+    try { data = await loadExplain(); } catch { return; }
+    for (const h of heads) {
+      if (h.dataset.ai || !document.contains(h)) continue;
+      h.dataset.ai = "1";
+      const key = aiKey(h.id);
+      if (!data.items[key]) continue;
+      const row = document.createElement("div");
+      row.className = "ai-row";
+      h.replaceWith(row);
+      row.append(h);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ai-btn";
+      btn.dataset.title = h.textContent;
+      btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("aria-controls", "ai-panel");
+      btn.setAttribute("aria-label", `Lecture IA du graphique « ${h.textContent} »`);
+      btn.innerHTML = `<svg class="ico" aria-hidden="true"><use href="#i-spark"/></svg><span>Lecture IA</span>`;
+      btn.addEventListener("click", () => openExplain(key, btn));
+      row.append(btn);
+    }
+  }
+  let decorateQueued = false;
+  new MutationObserver(() => {
+    if (decorateQueued) return;
+    decorateQueued = true;
+    requestAnimationFrame(() => { decorateQueued = false; decorateCharts(); });
+  }).observe(view, { childList: true, subtree: true });
 
   // Render as soon as Chart.js is there (scripts may arrive in any order behind a CDN). If it is
   // slow, render the text after 3 s anyway, then redraw by itself the moment the library arrives,

@@ -12,6 +12,7 @@ from app.detectors import coherence, duplicates, early_claim, nomadism, price
 from app.detectors.base import Alert
 from app.exploration import explore
 from app.generator import N_DAYS, Dataset
+from app.narratives import build as build_narratives
 from app.providers import analyse as analyse_providers
 
 
@@ -28,6 +29,16 @@ class Result:
     advanced: dict | None = field(repr=False, default=None)  # filled in the background by app.state
     model: dict | None = field(repr=False, default=None)  # idem, after ``advanced``
     providers: dict | None = field(repr=False, default=None)
+    narratives: dict | None = field(repr=False, default=None)
+
+    def get_narratives(self) -> dict:
+        """Chart commentaries; kept once the background parts (sweeps, model) are in."""
+        if self.narratives is not None:
+            return self.narratives
+        built = build_narratives(self)
+        if self.advanced is not None and self.model is not None:
+            self.narratives = built
+        return built
 
     def get_providers(self) -> dict:
         """Provider heat maps and member-provider graph, computed on first use."""

@@ -40,6 +40,8 @@ A small, complete demo of **health-insurance fraud detection broken into scenari
 | **Exploration**: the data before any rule, then each scenario's signal | **Alert detail**: why, evidence rows, suggested decision |
 | ![Evaluation: precision-recall per threshold](docs/images/evaluation.png) | ![Providers: alerts per week and billing profile](docs/images/providers.png) |
 | **Evaluation**: precision-recall per threshold, confusion matrices, gain curve | **Providers**: heat maps and member-provider graph |
+| ![Overview with the collapsible sidebar](docs/images/overview.png) | ![« Lecture IA » panel next to the gain curve](docs/images/ai-reading.png) |
+| **Overview**: key figures, alerts over time; the sidebar folds to icons | **Lecture IA**: what the chart shows, why it matters, its limit, and every number it uses |
 | ![Unsupervised model compared with the rules](docs/images/model.png) | |
 | **Unsupervised model**: Isolation Forest compared with the rules at the same workload | |
 
@@ -240,6 +242,14 @@ The **Modèle non supervisé** page trains an Isolation Forest (scikit-learn, 20
 | Isolation Forest, raw features (amount, act rarity, age, provider volume, day) | 31 % | 25 % |
 
 The jump from 31 % to 61 % comes from the features, not the algorithm. The model also finds 8 fraudulent lines that no rule flags. That makes it a useful discovery tool for new scenarios, but not a replacement: it gives a score, not a reason a claims handler can act on. It is trained on the whole year at once; a real deployment would train on the past and score the present.
+
+## AI reading of the charts (« Lecture IA »)
+
+Each of the 27 charts has a **✦ Lecture IA** button. It opens a side panel with three short parts written for a claims manager: what the chart shows, why it matters, and the limit to keep in mind, followed by the list of numbers the text uses.
+
+- **Today: static, no API key.** The texts were written by an AI assistant as templates, reviewed, and filled with the chart's own data (`app/narratives.py`, served by `GET /api/explain`). They change when the data changes.
+- **No invented figure.** `tests/test_narratives.py` removes every recorded fact from each text and fails if any digit is left, so a commentary can only quote numbers that come from the data.
+- **Later: dynamic.** An LLM provider can replace the static one behind the same route and the same response shape. It would be called from the server only, with the key in the server's `.env` (never in the browser, the repository or the image), cached per dataset, rate limited, and its output would go through the same number check before being shown.
 
 ## What I would do next
 

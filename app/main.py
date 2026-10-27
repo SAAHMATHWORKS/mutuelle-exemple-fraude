@@ -433,6 +433,13 @@ def model_view() -> dict:
     return {"status": "ready", "dataset": _dataset_meta(), **m}
 
 
+@app.get("/api/explain")
+def explain() -> dict:
+    """« Lecture IA » commentaries for the charts (static provider; see app/narratives.py)."""
+    r = state.current()
+    return {"dataset": _dataset_meta(), **r.get_narratives()}
+
+
 @app.get("/api/exploration")
 def exploration() -> dict:
     r = state.current()

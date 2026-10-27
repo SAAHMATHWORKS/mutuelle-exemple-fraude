@@ -150,3 +150,13 @@ def test_regenerate_validates_and_is_rate_limited(client, monkeypatch):
 
     again = client.post("/api/regenerate", json={"seed": 10, "size": 3_000, "noise_level": 0.4})
     assert again.status_code == 429 and int(again.headers["retry-after"]) > 0
+
+
+def test_explain_gives_a_commentary_per_chart(client):
+    r = client.get("/api/explain")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"]["kind"] == "static"
+    assert {"volume", "gain", "m-overlap", "net"} <= set(body["items"])
+    for it in body["items"].values():
+        assert {"id", "title", "see", "why", "limit", "facts"} <= set(it)
