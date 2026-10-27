@@ -196,3 +196,20 @@ def test_openai_compatible_round_trip_over_http(result):
     assert out["checked"] and out["tools"] == ["chiffres d'un scénario"]
     assert out["answer"].startswith("Le rappel de la règle des doublons est de")
     assert Handler.seen["requests"] == 2 and set(Handler.seen["auth"]) == {"Bearer test-key-not-real"}
+
+
+def test_the_chart_in_view_is_named_next_to_the_question(result):
+    seen = {}
+
+    def model(messages, info):
+        seen["prompt"] = " ".join(
+            str(p.content) for m in messages for p in getattr(m, "parts", []) if type(p).__name__ == "UserPromptPart"
+        )
+        return ModelResponse(parts=[TextPart("Ce graphique montre les alertes dans le temps.")])
+
+    chart = {"id": "volume", "title": "Alertes dans le temps", "see": "Vu.", "why": "Pourquoi.", "limit": "Limite."}
+    bot = ChatAssistant(Config.from_env(ENV), model=FunctionModel(model))
+    out = asyncio.run(bot.ask("Explique-moi ce graphique", [], CONTEXT, result, chart))
+    assert out["checked"]
+    assert "« Alertes dans le temps » (page Vue d'ensemble)" in seen["prompt"]
+    assert seen["prompt"].rstrip().endswith("Explique-moi ce graphique")

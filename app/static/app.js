@@ -2097,6 +2097,11 @@
   }
   function openChat(chart = null) {
     if (!chatEnabled) return;
+    if (chart && chatChart && chart.id !== chatChart.id && chatHistory.length) {
+      // Another chart: a new conversation, so the earlier topic does not mislead the answers.
+      chatHistory.length = 0;
+      chatLog.innerHTML = "";
+    }
     if (chart) chatChart = chart;
     chatOpener = document.activeElement;
     closeExplain(false);

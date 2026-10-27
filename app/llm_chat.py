@@ -64,6 +64,29 @@ UNCHECKED_ANSWER = (
 TOO_BROAD_ANSWER = "La question demande trop de recherches pour une seule réponse. Pouvez-vous la préciser ?"
 NNBSP, NBSP = " ", " "
 MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+CHART_PAGES = {
+    **dict.fromkeys(("volume", "sev", "dec"), "Vue d'ensemble"),
+    **dict.fromkeys(
+        (
+            "amounts",
+            "mix",
+            "spread",
+            "season",
+            "daily",
+            "lorenz",
+            "age",
+            "sig-price",
+            "sig-dup",
+            "sig-prov",
+            "sig-early",
+            "sig-coh",
+        ),
+        "Exploration des données",
+    ),
+    **dict.fromkeys(("hm", "sc", "net"), "Prestataires et réseau"),
+    **dict.fromkeys(("per", "causes", "pr", "cm", "gain", "sevcal", "eco"), "Évaluation"),
+    **dict.fromkeys(("m-recall", "m-pr", "m-overlap"), "Modèle non supervisé"),
+}
 TOOL_LABELS = {
     "chercher_alertes": "recherche d'alertes",
     "detail_alerte": "détail d'une alerte",
@@ -435,14 +458,23 @@ class ChatAssistant:
             self._requests += n
             return True
 
-    async def ask(self, question: str, history: list[dict], context: str, result: Any) -> dict:
-        """Answer ``question``. Raises ChatUnavailable when the model cannot be reached."""
+    async def ask(self, question: str, history: list[dict], context: str, result: Any, chart: dict | None = None) -> dict:
+        """Answer ``question``, about ``chart`` (a « Lecture IA » item) when the visitor asked from one.
+
+        Raises ChatUnavailable when the model cannot be reached.
+        """
         if not self._spend(1):
             raise ChatUnavailable("budget")
         # Numbers the answer may use: the instructions, what the visitor wrote, and (added by the tools) the data.
         deps = DemoData(result=result, allowed=[context, question, *(m["text"] for m in history if m["role"] == "user")])
         earlier = "\n".join(f"{'Visiteur' if m['role'] == 'user' else 'Assistant'} : {m['text']}" for m in history)
         prompt = f"Échanges précédents :\n{earlier}\n\nQuestion : {question}" if earlier else question
+        if chart:  # said right next to the question, so "ce graphique" is never ambiguous
+            page = CHART_PAGES.get(chart["id"], "")
+            prompt = (
+                f"Le visiteur regarde le graphique « {chart['title']} »{f' (page {page})' if page else ''}. "
+                f"Lecture de ce graphique : {chart['see']} {chart['why']} Limite : {chart['limit']}\n\n{prompt}"
+            )
         try:
             run = await agent.run(
                 prompt,

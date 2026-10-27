@@ -524,10 +524,12 @@ async def chat(body: ChatRequest, request: Request) -> JSONResponse:
             headers={"Retry-After": str(math.ceil(wait))},
         )
     r = state.current()
-    context = build_context(_dataset_meta(), rules_doc(), r.get_narratives(), body.chart_id)
+    narratives = r.get_narratives()
+    context = build_context(_dataset_meta(), rules_doc(), narratives, body.chart_id)
+    chart = narratives["items"].get(body.chart_id) if body.chart_id else None
     history = [t.model_dump() for t in body.history][-6:]
     try:
-        out = await assistant.ask(body.question.strip(), history, context, r)
+        out = await assistant.ask(body.question.strip(), history, context, r, chart)
     except ChatUnavailable:
         return JSONResponse(
             {"detail": "Le chat ne peut pas répondre pour le moment. La « Lecture IA » de chaque graphique reste disponible."},
