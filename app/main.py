@@ -511,4 +511,6 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/", include_in_schema=False)
 def index() -> HTMLResponse:
-    return HTMLResponse(INDEX_HTML, headers={"Cache-Control": "no-cache"})
+    # no-transform: CDN proxies (Cloudflare Rocket Loader, email obfuscation, analytics beacon) must not
+    # rewrite this page; it is small, so losing edge compression on it costs nothing.
+    return HTMLResponse(INDEX_HTML, headers={"Cache-Control": "no-cache, no-transform"})

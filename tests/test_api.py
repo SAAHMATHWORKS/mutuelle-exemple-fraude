@@ -31,7 +31,7 @@ def test_index_page_is_served_with_synthetic_data_footer(client):
     assert "/static/app.js?v=" in r.text and "/static/vendor/chart.umd.min.js?v=" in r.text
     assert r.text.index("chart.umd.min.js") < r.text.index("/static/app.js")
     assert 'data-cfasync="false"' in r.text
-    assert r.headers["cache-control"] == "no-cache"
+    assert r.headers["cache-control"] == "no-cache, no-transform"  # never rewritten by a CDN
 
 
 def test_overview_contract(client):

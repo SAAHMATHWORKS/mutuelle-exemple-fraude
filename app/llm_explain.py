@@ -39,7 +39,9 @@ log = logging.getLogger("app.llm_explain")
 
 PROVIDERS = ("openai", "anthropic")
 DEFAULT_BASE_URL = {"openai": "https://api.openai.com/v1", "anthropic": "https://api.anthropic.com/v1"}
-TIMEOUT_S = 25.0
+# Whole budget of one chart, retry included: under the page's 30 s wait and Nginx's 30 s proxy timeout.
+TIMEOUT_S = 24.0
+MIN_RETRY_S = 6.0
 MAX_PART_CHARS = 420
 
 SYSTEM_PROMPT = (
@@ -227,13 +229,18 @@ class Explainer:
             },
             ensure_ascii=False,
         )
+        deadline = time.monotonic() + TIMEOUT_S
         for attempt in (1, 2):
+            remaining = deadline - time.monotonic()
+            if attempt == 2 and remaining < MIN_RETRY_S:
+                log.warning("Lecture IA : plus le temps de redemander %s ; version statique.", item["id"])
+                return None
             if not self._take_budget():
                 log.warning("Lecture IA : budget quotidien atteint ; version statique.")
                 return None
             url, headers, body = build_request(self.cfg, user)
             try:
-                parts = _parse(_answer_text(self.cfg, self._transport(url, headers, body, TIMEOUT_S)))
+                parts = _parse(_answer_text(self.cfg, self._transport(url, headers, body, remaining)))
             except urllib.error.HTTPError as exc:
                 log.warning("Lecture IA : le fournisseur a répondu %s ; version statique.", exc.code)
                 return None

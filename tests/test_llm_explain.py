@@ -135,3 +135,16 @@ def test_real_http_round_trip_with_a_local_fake_provider():
     assert got["see"] == "Avec 365 alertes, 75 % des euros."
     assert seen["path"] == "/v1/chat/completions" and seen["auth"] == "Bearer test-key-not-real"
     assert "test-key-not-real" not in json.dumps(seen["body"])
+
+
+def test_no_retry_when_the_time_budget_is_spent():
+    import app.llm_explain as mod
+
+    saved = mod.TIMEOUT_S
+    mod.TIMEOUT_S = 3.0  # below MIN_RETRY_S: the first answer is the only chance
+    try:
+        fake = FakeTransport(openai_reply("En 2025, 80 % des euros."), openai_reply("Avec 365 alertes."))
+        ex = Explainer(Config.from_env(ENV), transport=fake)
+        assert ex.explain("42", ITEM) is None and len(fake.calls) == 1
+    finally:
+        mod.TIMEOUT_S = saved
