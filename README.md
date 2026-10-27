@@ -59,6 +59,8 @@ A claims handler cannot review 20,000 lines. They need a short queue in which ev
 | 4 | **Diagnosis / act incoherence** | An act unrelated to the diagnosis, for example glasses for back pain | A rules table lists the diagnosis groups that go with each act; anything outside it is flagged | Ask for medical justification, or no action below 25 € |
 | 5 | **Very early claim** | A costly claim right after the policy starts | A costly act or ≥ 150 € within 30 days of the start date (high severity within 7 days) | Check the start date and the enrolment declaration |
 
+The overview page explains the same five rules in plain French (« Comment ça marche ? »). That text is built from the detectors' own constants (`app/rules_doc.py`), so it cannot drift from the code.
+
 Each alert carries a severity, a one-sentence reason in French, the evidence rows (flagged lines and context lines) and a suggested decision. Alerts come only from rules and simple statistics; an unsupervised model is shown on a separate page, as a comparison.
 
 ## Architecture
@@ -250,6 +252,8 @@ Each of the 27 charts has a **✦ Lecture IA** button. It opens a side panel wit
 - **Today: static, no API key.** The texts were written by an AI assistant as templates, reviewed, and filled with the chart's own data (`app/narratives.py`, served by `GET /api/explain`). They change when the data changes.
 - **No invented figure.** `tests/test_narratives.py` removes every recorded fact from each text and fails if any digit is left, so a commentary can only quote numbers that come from the data.
 - **Later: dynamic.** An LLM provider can replace the static one behind the same route and the same response shape. It would be called from the server only, with the key in the server's `.env` (never in the browser, the repository or the image), cached per dataset, rate limited, and its output would go through the same number check before being shown.
+
+**Accessibility.** Every text on every view meets the WCAG AA contrast ratio in the light and dark themes (checked with an automated audit of the rendered pages); each chart has a text description and most have a « Voir les données en tableau » table; controls are native buttons and links, and Escape closes the menu and the side panel.
 
 ## What I would do next
 

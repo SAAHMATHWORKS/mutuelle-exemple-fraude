@@ -103,3 +103,14 @@ def test_early_claim_rule_with_no_window():
 
     claims = generate(seed=9, size=3_000).claims
     assert early_claim.detect(claims.iloc[:0], max_days=30) == []
+
+
+def test_rule_explanations_quote_the_detectors_thresholds():
+    from app.detectors import early_claim, nomadism, price
+    from app.rules_doc import rules
+
+    text = {r["scenario"]: r["how"] + " " + r["then"] for r in rules()}
+    assert set(text) == {1, 2, 3, 4, 5}
+    assert f"{price.RATIO_FLAG:g} fois" in text[1] and f"{price.RATIO_HIGH:g} fois" in text[1]
+    assert f"{nomadism.MIN_NEW_PROVIDERS} nouveaux" in text[3] and f"{nomadism.WINDOW_DAYS} jours" in text[3]
+    assert f"{early_claim.MAX_DAYS} jours" in text[5]

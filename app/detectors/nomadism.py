@@ -16,6 +16,7 @@ from app.detectors.base import Alert
 
 WINDOW_DAYS = 14
 MIN_NEW_PROVIDERS = 3
+HIGH_NEW_PROVIDERS = 4  # high severity from this many new providers of one type
 WATCHED_TYPES = ("GEN", "SPE", "PHA")
 _NOUNS = {  # (singular, plural, feminine)
     "GEN": ("médecin généraliste", "médecins généralistes", False),
@@ -86,7 +87,7 @@ def detect(claims: pd.DataFrame, min_new: int = MIN_NEW_PROVIDERS, window_days: 
             alerts.append(
                 Alert(
                     scenario=3,
-                    severity="haute" if biggest >= 4 else "moyenne",
+                    severity="haute" if biggest >= HIGH_NEW_PROVIDERS else "moyenne",
                     score=float(sum(per_type.values())),
                     alert_day=last,
                     member_id=member,

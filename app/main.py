@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from app.catalog import ACTS, DECISIONS, DIAGNOSES, INSURER_NAME, PROVIDER_TYPES, SCENARIOS
 from app.detectors.price import price_history
 from app.generator import MAX_SIZE, MIN_SIZE, N_DAYS, PERIOD_START
+from app.rules_doc import rules as rules_doc
 from app.state import state
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -215,6 +216,7 @@ def overview() -> dict:
         "per_day": per_day,
         "scenarios": {str(k): v["label"] for k, v in SCENARIOS.items()},
         "decisions": DECISIONS,
+        "rules": rules_doc(),
         "by_decision": _by_decision(r.alerts),
         "top_providers": _top_providers(r),
         "recent_high": _recent_high(r.alerts),

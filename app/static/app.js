@@ -256,7 +256,7 @@
           <details class="data-table"><summary>Voir les données en tableau</summary><div class="table-scroll" id="volume-table"></div></details>
         </section>
         <section class="card" aria-labelledby="t-scen">
-          <h2 id="t-scen">Par scénario</h2>
+          <div class="card-head"><h2 id="t-scen">Par scénario</h2><button type="button" class="link-btn" id="go-how">Comment ça marche&nbsp;?</button></div>
           <p class="sub">Cliquez sur un scénario pour ouvrir ses alertes.</p>
           <ul class="scenario-list">
             ${o.per_scenario.map((s) => `
@@ -270,6 +270,20 @@
           </ul>
         </section>
       </div>
+
+      <section class="card section how" id="how" aria-labelledby="t-how" tabindex="-1">
+        <h2 id="t-how">Comment ça marche&nbsp;? Les cinq règles en clair</h2>
+        <p class="sub">Chaque règle est un petit module lisible. Les seuils cités ici sont lus dans le code des règles : ce texte ne peut pas les contredire.</p>
+        <ol class="how-list">
+          ${o.rules.map((r) => `
+            <li style="--c:var(--s${r.scenario})">
+              <div class="how-head"><span class="how-n" aria-hidden="true">${r.scenario}</span><h3>${esc(r.label)}</h3></div>
+              <p>${esc(r.how)}</p>
+              <p class="sub">${esc(r.then)}</p>
+              <a href="#/alertes?scenario=${r.scenario}">Voir ses alertes<span class="visually-hidden"> : ${esc(r.label)}</span> →</a>
+            </li>`).join("")}
+        </ol>
+      </section>
 
       <div class="grid halves section">
         ${chartCard({
@@ -369,6 +383,11 @@
         <tbody>${rows.map((r) => `<tr><td>${dateLong(r.date)}</td>${keys.map((k) => `<td class="num">${r[k]}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
     };
     draw("week");
+    document.getElementById("go-how").addEventListener("click", () => {
+      const how = document.getElementById("how");
+      how.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      how.focus({ preventScroll: true });
+    });
     view.querySelectorAll("[data-gran]").forEach((b) => b.addEventListener("click", () => {
       view.querySelectorAll("[data-gran]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
       draw(b.dataset.gran);
@@ -1588,7 +1607,10 @@
     const sevLabel = { haute: "Haute", moyenne: "Moyenne", faible: "Faible" };
     const ruleCols = cm.per_rule.map((r) => r.scenario);
     const cellStyle = (share) => {
-      const pctv = Math.round(Math.min(1, share) * 85);
+      // Two bands keep every number readable (WCAG AA): light cells with dark text up to half,
+      // then strong cells with light text. The jump marks "the rule catches most of this scenario".
+      const v = Math.min(1, share);
+      const pctv = Math.round(v <= 0.5 ? v * 120 : 88 + (v - 0.5) * 24);
       return `background:color-mix(in srgb, var(--accent) ${pctv}%, var(--surface));color:${share > 0.5 ? "var(--accent-ink)" : "var(--text)"}`;
     };
     const heatRows = cm.matrix.map((r) => {
