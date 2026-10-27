@@ -102,7 +102,11 @@
     Chart.defaults.font.size = 12;
     Chart.defaults.color = css("--text-2");
     Chart.defaults.borderColor = css("--grid");
-    Chart.defaults.animation = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? false : { duration: 250 };
+    // Change the duration only: never replace Chart.defaults.animation. Chart.js copies each animated
+    // property's options from the keys of that object (including "type"); replaced by { duration },
+    // colours lose their type, the first hover throws "this._fn is not a function" inside the shared
+    // animation loop, and that loop stops for good: every chart drawn afterwards stays blank.
+    Chart.defaults.animation.duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 250;
     Chart.defaults.plugins.legend.display = false; // HTML legends are used instead
     Chart.defaults.plugins.tooltip.backgroundColor = css("--surface");
     Chart.defaults.plugins.tooltip.titleColor = css("--text");
