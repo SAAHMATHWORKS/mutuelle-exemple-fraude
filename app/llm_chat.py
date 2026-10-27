@@ -9,6 +9,7 @@ Configuration (server ``.env`` only; never in the repository, the image or the b
     LLM_API_KEY=...            # the secret; read once at startup, never logged nor returned
     LLM_MODEL=...              # model name of the provider (required)
     LLM_BASE_URL=              # optional, for an OpenAI-compatible API hosted elsewhere
+    LLM_OPENAI_API=auto        # auto: Responses API on api.openai.com, Chat Completions elsewhere
     LLM_MAX_CALLS_PER_DAY=200  # hard budget of model requests; past it the chat closes for the day
 
 How an answer is made:
@@ -51,8 +52,8 @@ log = logging.getLogger("app.llm_chat")
 
 PROVIDERS = ("openai", "anthropic")
 DEFAULT_BASE_URL = {"openai": "https://api.openai.com/v1", "anthropic": "https://api.anthropic.com"}
-TIMEOUT_S = 24.0  # one question, tools and retry included: under Nginx's 30 s proxy timeout
-REQUEST_TIMEOUT_S = 15.0
+TIMEOUT_S = 26.0  # one question, tools and retry included: under Nginx's 30 s proxy timeout
+REQUEST_TIMEOUT_S = 20.0
 MAX_REQUESTS = 5  # model requests per question
 MAX_TOOL_CALLS = 6
 MAX_ANSWER_CHARS = 1500
@@ -333,6 +334,14 @@ class Config:
     api_key: str = field(repr=False)
     base_url: str = ""
     max_calls_per_day: int = 200
+    openai_api: str = "auto"  # "responses", "chat" or "auto"
+
+    @property
+    def uses_responses_api(self) -> bool:
+        """OpenAI's reasoning models only take tools through the Responses API; compatible hosts often lack it."""
+        if self.openai_api in ("responses", "chat"):
+            return self.openai_api == "responses"
+        return self.base_url == DEFAULT_BASE_URL["openai"]
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Config | None":
@@ -352,7 +361,11 @@ class Config:
         except ValueError:
             cap = 200
         base = (env.get("LLM_BASE_URL", "").strip() or DEFAULT_BASE_URL[provider]).rstrip("/")
-        return cls(provider=provider, model=model, api_key=key, base_url=base, max_calls_per_day=cap)
+        api = env.get("LLM_OPENAI_API", "auto").strip().lower() or "auto"
+        if api not in ("auto", "responses", "chat"):
+            log.warning("Chat : LLM_OPENAI_API=%r inconnu (auto, responses ou chat) ; auto.", api)
+            api = "auto"
+        return cls(provider=provider, model=model, api_key=key, base_url=base, max_calls_per_day=cap, openai_api=api)
 
 
 def build_model(cfg: Config):
@@ -362,10 +375,13 @@ def build_model(cfg: Config):
         from pydantic_ai.providers.anthropic import AnthropicProvider
 
         return AnthropicModel(cfg.model, provider=AnthropicProvider(api_key=cfg.api_key))
-    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
-    return OpenAIChatModel(cfg.model, provider=OpenAIProvider(api_key=cfg.api_key, base_url=cfg.base_url))
+    provider = OpenAIProvider(api_key=cfg.api_key, base_url=cfg.base_url)
+    if cfg.uses_responses_api:
+        return OpenAIResponsesModel(cfg.model, provider=provider)
+    return OpenAIChatModel(cfg.model, provider=provider)
 
 
 class ChatUnavailable(Exception):

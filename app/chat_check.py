@@ -18,7 +18,8 @@ async def main() -> None:
     if bot is None:
         print("Chat désactivé : LLM_PROVIDER, LLM_API_KEY ou LLM_MODEL manquant, ou pydantic-ai absent.")
         return
-    print(f"Fournisseur {bot.cfg.provider}, modèle {bot.cfg.model}, adresse {bot.cfg.base_url}")
+    api = type(bot.model).__name__
+    print(f"Fournisseur {bot.cfg.provider}, modèle {bot.cfg.model}, adresse {bot.cfg.base_url}, interface {api}")
     r = state.current()
     context = build_context(_dataset_meta(), rules_doc(), r.get_narratives())
     question = "Quelle est la précision de la règle des doublons ?"

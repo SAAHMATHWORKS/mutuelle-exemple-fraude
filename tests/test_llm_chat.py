@@ -57,9 +57,12 @@ def test_off_without_full_configuration():
 
 
 def test_models_of_both_providers_build_and_hide_the_key():
-    for provider in ("openai", "anthropic"):
-        model = build_model(Config.from_env({**ENV, "LLM_PROVIDER": provider}))
-        assert type(model).__name__ == {"openai": "OpenAIChatModel", "anthropic": "AnthropicModel"}[provider]
+    built = lambda **env: type(build_model(Config.from_env({**ENV, **env}))).__name__  # noqa: E731
+    assert built() == "OpenAIResponsesModel"  # api.openai.com: reasoning models take tools only there
+    assert built(LLM_BASE_URL="https://llm.example.com/v1") == "OpenAIChatModel"  # compatible hosts
+    assert built(LLM_BASE_URL="https://llm.example.com/v1", LLM_OPENAI_API="responses") == "OpenAIResponsesModel"
+    assert built(LLM_OPENAI_API="chat") == "OpenAIChatModel"
+    assert built(LLM_PROVIDER="anthropic") == "AnthropicModel"
     bot = ChatAssistant.from_env(ENV)
     assert "test-key-not-real" not in json.dumps(bot.source)
 
