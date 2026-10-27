@@ -227,11 +227,14 @@
           <p>${esc(d.insurer)}, assureur fictif, rembourse ${nf.format(d.n_claims)} actes en 2025 à ${nf.format(d.n_members)} adhérents, chez ${nf.format(d.n_providers)} prestataires.
           Cinq fraudes typiques y ont été injectées. Cinq règles lisibles les cherchent : chaque alerte dit pourquoi elle existe, montre ses preuves et propose une décision au gestionnaire.</p>
         </div>
-        <ol class="steps" aria-label="Comment lire la démo">
+        <nav class="guide" aria-labelledby="t-guide">
+        <h2 id="t-guide" class="guide-title">Guide de lecture en 3 étapes</h2>
+        <ol class="steps">
           <li><a href="#/exploration"><span class="step-n">1</span><strong>Comprendre les données</strong><span>Distributions, saisonnalité, signal de chaque fraude.</span></a></li>
           <li><a href="#/alertes"><span class="step-n">2</span><strong>Traiter les alertes</strong><span>La file du gestionnaire, puis le détail d'une alerte.</span></a></li>
           <li><a href="#/evaluation"><span class="step-n">3</span><strong>Mesurer honnêtement</strong><span>Rappel, précision, seuils, courbe de gain, limites.</span></a></li>
         </ol>
+        </nav>
       </section>
 
       <section class="grid kpis" aria-label="Chiffres clés">

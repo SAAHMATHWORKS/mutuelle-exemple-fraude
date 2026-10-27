@@ -323,6 +323,7 @@ table.scorecard th.rowh { white-space: nowrap; }
 .hero h1 { font-size: 1.65rem; margin-bottom: 6px; }
 .hero p { margin: 0; color: var(--text-2); max-width: 62ch; }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.guide-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin: 0 0 8px 2px; }
 .steps a { display: grid; grid-template-columns: 30px 1fr; column-gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); text-decoration: none; color: var(--text); }
 .steps a:hover { background: var(--surface-2); }
 .steps a span:not(.step-n) { grid-column: 2; font-size: 0.83rem; color: var(--text-3); }
