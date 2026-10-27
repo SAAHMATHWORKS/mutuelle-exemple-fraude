@@ -181,46 +181,9 @@ def test_provider_errors_and_budget_raise_unavailable(result):
 
 def test_openai_compatible_round_trip_over_http(result):
     """The real provider path: OpenAIChatModel over HTTP to a local fake server, with one tool call."""
-    import threading
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from tests.fake_openai import Handler, start
 
-    seen = {"auth": [], "requests": 0}
-
-    def reply(message, finish):
-        return {
-            "id": "chatcmpl-test",
-            "object": "chat.completion",
-            "created": 0,
-            "model": "some-model",
-            "choices": [{"index": 0, "message": message, "finish_reason": finish}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self):
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            seen["auth"].append(self.headers.get("Authorization"))
-            seen["requests"] += 1
-            tool_msgs = [m for m in body["messages"] if m.get("role") == "tool"]
-            if not tool_msgs:
-                function = {"name": "chiffres_scenario", "arguments": '{"scenario": 2}'}
-                call = {"id": "call_1", "type": "function", "function": function}
-                out = reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls")
-            else:
-                rappel = json.loads(tool_msgs[-1]["content"])["rappel"]
-                out = reply({"role": "assistant", "content": f"Le rappel de la règle des doublons est de {rappel}."}, "stop")
-            data = json.dumps(out).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        def log_message(self, *args):
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = start()
     try:
         env = {**ENV, "LLM_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1"}
         bot = ChatAssistant.from_env(env)
@@ -229,4 +192,4 @@ def test_openai_compatible_round_trip_over_http(result):
         server.shutdown()
     assert out["checked"] and out["tools"] == ["chiffres d'un scénario"]
     assert out["answer"].startswith("Le rappel de la règle des doublons est de")
-    assert seen["requests"] == 2 and set(seen["auth"]) == {"Bearer test-key-not-real"}
+    assert Handler.seen["requests"] == 2 and set(Handler.seen["auth"]) == {"Bearer test-key-not-real"}

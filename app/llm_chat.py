@@ -403,6 +403,11 @@ class ChatAssistant:
             ),
         }
 
+    def redact(self, text: str) -> str:
+        """An error message without the key (providers sometimes echo part of it)."""
+        text = text.replace(self.cfg.api_key, "***") if self.cfg.api_key else text
+        return re.sub(r"(sk|key)-[A-Za-z0-9_*\-]{6,}", r"\1-***", text)
+
     def _spend(self, n: int) -> bool:
         """Count ``n`` model requests against the daily budget; False if the budget is already spent."""
         with self._guard:
@@ -439,7 +444,7 @@ class ChatAssistant:
             log.warning("Chat : réponse écartée, nombres non vérifiables.")
             return {"answer": UNCHECKED_ANSWER, "facts": [], "checked": False, "tools": []}
         except Exception as exc:  # provider error, network, timeout
-            log.warning("Chat : appel impossible (%s).", type(exc).__name__)
+            log.warning("Chat : appel impossible (%s : %s).", type(exc).__name__, self.redact(str(exc))[:400])
             raise ChatUnavailable("provider") from None
         self._spend(max(0, run.usage.requests - 1))
         responses = [msg for msg in run.all_messages() if isinstance(msg, ModelResponse)]

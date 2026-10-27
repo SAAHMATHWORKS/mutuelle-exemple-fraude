@@ -140,6 +140,31 @@ jobs:
           echo "memory: $mem"
           python3 -c "import re,sys; v,u=re.match(r'([\d.]+)(\w+)', '$mem').groups(); mib=float(v)*{'KiB':1/1024,'MiB':1,'GiB':1024}[u]; print(f'{mib:.0f} MiB'); sys.exit(0 if mib < 200 else 1)"
 
+      - name: Chat in the container, through a fake OpenAI-compatible provider
+        run: |
+          python3 tests/fake_openai.py 9911 &
+          docker run -d --name demo-chat \
+            --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --add-host=host.docker.internal:host-gateway \
+            -e PORT=8081 -p 127.0.0.1:8081:8081 \
+            -e LLM_PROVIDER=openai -e LLM_API_KEY=test-key-not-real -e LLM_MODEL=some-model \
+            -e LLM_BASE_URL=http://host.docker.internal:9911/v1 \
+            mutuelle-exemple-fraude:ci
+          for i in $(seq 1 45); do curl -fsS http://127.0.0.1:8081/health && break; sleep 2; done
+          echo
+          curl -fsS http://127.0.0.1:8081/health | grep -q '"chat":"llm"'
+          docker exec demo-chat python -m app.chat_check | tee /tmp/check.txt
+          grep -q '^OK' /tmp/check.txt
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            -d '{"question":"Quelle est la précision de la règle des doublons ?"}' \
+            http://127.0.0.1:8081/api/chat | tee /tmp/chat.json
+          echo
+          grep -q '"checked":true' /tmp/chat.json
+          docker logs demo-chat 2>&1 | grep -q "test-key-not-real" && { echo "key found in the log"; exit 1; } || true
+
       - name: Show container log on failure
         if: failure()
-        run: docker logs demo || true
+        run: |
+          docker logs demo || true
+          docker logs demo-chat || true
