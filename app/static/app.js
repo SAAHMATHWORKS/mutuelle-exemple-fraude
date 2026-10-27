@@ -81,7 +81,12 @@
     Chart.defaults.maintainAspectRatio = false;
   }
   function makeChart(canvas, config) {
-    if (!window.Chart) return null;
+    if (!window.Chart) {
+      // Never leave an empty frame: say why there is no chart (the table view still has the data).
+      const wrap = canvas && canvas.parentElement;
+      if (wrap) wrap.innerHTML = `<p class="error">Graphique indisponible : la bibliothèque de graphiques ne s'est pas chargée. Rechargez la page ; les données restent lisibles dans « Voir les données en tableau ».</p>`;
+      return null;
+    }
     const c = new Chart(canvas, config);
     charts.push(c);
     return c;
@@ -1714,5 +1719,10 @@
     update();
   }
 
-  route();
+  // Wait for Chart.js (up to 5 s) before the first render, whatever order the scripts arrive in.
+  function whenChartReady(cb, waited = 0) {
+    if (window.Chart || waited >= 5000) { cb(); return; }
+    setTimeout(() => whenChartReady(cb, waited + 100), 100);
+  }
+  whenChartReady(route);
 })();

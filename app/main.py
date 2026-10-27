@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,23 @@ from app.generator import MAX_SIZE, MIN_SIZE, N_DAYS, PERIOD_START
 from app.state import state
 
 STATIC_DIR = Path(__file__).parent / "static"
+VERSIONED_ASSETS = ("styles.css", "vendor/chart.umd.min.js", "app.js")
+
+
+def _index_html() -> str:
+    """index.html with a content hash on each asset URL, so a new deployment is never
+    hidden by a browser or CDN cache of the previous app.js or stylesheet."""
+    digest = hashlib.sha256()
+    for name in VERSIONED_ASSETS:
+        digest.update((STATIC_DIR / name).read_bytes())
+    version = digest.hexdigest()[:12]
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    for name in VERSIONED_ASSETS:
+        html = html.replace(f'/static/{name}"', f'/static/{name}?v={version}"')
+    return html
+
+
+INDEX_HTML = _index_html()
 
 
 def iso(day: int) -> str:
@@ -375,5 +393,5 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+def index() -> HTMLResponse:
+    return HTMLResponse(INDEX_HTML, headers={"Cache-Control": "no-cache"})

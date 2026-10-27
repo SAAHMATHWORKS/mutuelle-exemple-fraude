@@ -25,6 +25,11 @@ def test_index_page_is_served_with_synthetic_data_footer(client):
     assert r.headers["x-content-type-options"] == "nosniff"
     assert "default-src 'self'" in r.headers["content-security-policy"]
     assert client.get("/static/vendor/chart.umd.min.js").status_code == 200
+    # Asset URLs carry a content hash, Chart.js loads before the app, and the page itself is not cached.
+    assert "/static/app.js?v=" in r.text and "/static/vendor/chart.umd.min.js?v=" in r.text
+    assert r.text.index("chart.umd.min.js") < r.text.index("/static/app.js")
+    assert 'data-cfasync="false"' in r.text
+    assert r.headers["cache-control"] == "no-cache"
 
 
 def test_overview_contract(client):

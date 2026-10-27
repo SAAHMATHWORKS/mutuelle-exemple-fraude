@@ -7,8 +7,9 @@
   <meta name="description" content="Démo de détection de fraude santé par scénarios, sur données entièrement synthétiques.">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
-  <script src="/static/vendor/chart.umd.min.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <!-- data-cfasync="false": keep CDN script optimisers (Cloudflare Rocket Loader) from reordering these. -->
+  <script data-cfasync="false" src="/static/vendor/chart.umd.min.js" defer></script>
+  <script data-cfasync="false" src="/static/app.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Aller au contenu</a>
