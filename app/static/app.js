@@ -215,7 +215,7 @@
       <details class="settings card">
         <summary>Paramètres de la simulation</summary>
         <p class="sub" style="margin-top:8px">Graine ${d.seed}, ${nf.format(d.size)} lignes visées, bruit ${nf.format(d.noise_level)}. Données générées en ${nf1.format(d.generated_in_s)} s, règles appliquées en ${nf1.format(d.detected_in_s)} s.
-        Vous pouvez régénérer un autre jeu de données ; les autres visiteurs verront aussi le nouveau jeu.</p>
+        ${d.read_only ? "" : "Vous pouvez régénérer un autre jeu de données ; les autres visiteurs verront aussi le nouveau jeu."}</p>
         ${regenFormHtml(d)}
       </details>`;
 
@@ -265,7 +265,9 @@
     bindRegenForm();
   }
 
+  const READ_ONLY_NOTE = `<p class="notice">Démo en ligne en mode vitrine : tous les résultats ont été calculés une fois, à la construction, pour que le site réponde instantanément. La régénération (autre graine, taille ou niveau de bruit) fonctionne en local : <code>uvicorn app.main:app</code>, voir le README.</p>`;
   function regenFormHtml(d, noiseOverride) {
+    if (d.read_only) return READ_ONLY_NOTE;
     const noise = noiseOverride ?? d.noise_level;
     return `<form class="settings-form" id="regen-form">
         <label class="field">Graine<input name="seed" type="number" min="0" max="1000000" step="1" value="${d.seed}" required></label>
@@ -1655,8 +1657,8 @@
       ${legendHtml(scen.map((s) => ({ cls: `s${s.n}`, label: s.label })))}
       <div class="chart-wrap short"><canvas id="c-noise" role="img" aria-label="Courbes du rappel ou de la précision de chaque scénario selon le niveau de bruit"></canvas></div>
       <div class="table-scroll section" id="noise-table"></div>
-      <p style="margin-top:12px"><button class="btn" type="button" id="noise-regen">Régénérer le jeu de données à ce niveau de bruit</button></p>
-      <p class="status-line" id="noise-status" role="status"></p>`;
+      ${dataset.read_only ? "" : `<p style="margin-top:12px"><button class="btn" type="button" id="noise-regen">Régénérer le jeu de données à ce niveau de bruit</button></p>
+      <p class="status-line" id="noise-status" role="status"></p>`}`;
 
     const chart = makeChart(document.getElementById("c-noise"), {
       type: "line",
@@ -1693,7 +1695,7 @@
       body.querySelectorAll("[data-metric]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
       update();
     }));
-    document.getElementById("noise-regen").addEventListener("click", async (ev) => {
+    document.getElementById("noise-regen")?.addEventListener("click", async (ev) => {
       const btn = ev.currentTarget;
       const status = document.getElementById("noise-status");
       btn.disabled = true;

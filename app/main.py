@@ -63,6 +63,7 @@ async def security_headers(request: Request, call_next):
 # ---------------------------------------------------------------- schemas
 class Health(BaseModel):
     status: Literal["ok"]
+    mode: Literal["live", "vitrine"]
     claims: int
     alerts: int
 
@@ -153,6 +154,8 @@ def _dataset_meta() -> dict:
         "generated_in_s": round(d.generated_in_s, 2),
         "detected_in_s": round(r.detect_in_s, 2),
         "total_billed": round(float(d.claims.billed_amount.sum()), 2),
+        "read_only": state.read_only,
+        "mode": state.mode,
     }
 
 
@@ -160,7 +163,7 @@ def _dataset_meta() -> dict:
 @app.get("/health", response_model=Health)
 def health() -> dict:
     r = state.current()
-    return {"status": "ok", "claims": len(r.dataset.claims), "alerts": len(r.alerts)}
+    return {"status": "ok", "mode": state.mode, "claims": len(r.dataset.claims), "alerts": len(r.alerts)}
 
 
 @app.get("/api/overview")
@@ -345,6 +348,11 @@ def exploration() -> dict:
 def regenerate(body: RegenerateRequest, request: Request) -> JSONResponse:
     from app.state import limiter
 
+    if state.read_only:
+        return JSONResponse(
+            {"detail": "La régénération est désactivée sur la démo en ligne. Elle fonctionne en local : voir le README."},
+            status_code=403,
+        )
     client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
         request.client.host if request.client else "inconnu"
     )

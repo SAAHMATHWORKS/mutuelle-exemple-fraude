@@ -25,7 +25,7 @@ A small, complete demo of **health-insurance fraud detection broken into scenari
 - **Domain.** A French-speaking health insurer that reimburses care acts: consultations, dental, optical, pharmacy, imaging, physiotherapy. One claim line is one billed act.
 - **Period and size.** One observed year (2025) and about 20,000 claim lines. Fraud is about 5 % of lines, which is far more than in reality and keeps every scenario visible.
 - **Data.** Codes, prices and the act/diagnosis rules table are invented and simplified. They do not follow any real nomenclature or tariff.
-- **Shared state.** The app keeps one dataset in memory. "Regenerate" replaces it for every visitor, and it is rate limited.
+- **Shared state.** In live mode, the app keeps one dataset in memory: "Regenerate" replaces it for every visitor, and it is rate limited. The Docker image runs in showcase mode, where regeneration is off and every visitor sees the same precomputed demo.
 - **Decision buttons.** They only store the choice in the viewer's browser.
 
 ## The problem
@@ -103,7 +103,9 @@ pip install -r requirements.txt
 uvicorn app.main:app --port 7860
 ```
 
-Open <http://localhost:7860>. With Docker, run `docker build -t fraude-demo . && docker run -p 7860:7860 fraude-demo`.
+Open <http://localhost:7860>. This is the **live mode**: regeneration works and the heavier views are computed in the background after each new dataset.
+
+With Docker, `docker build -t fraude-demo . && docker run -p 7860:7860 fraude-demo` starts the **showcase mode** described below. Add `-e DEMO_SNAPSHOT=` to the `docker run` command for the live mode.
 
 To run the tests and the linter:
 
@@ -113,9 +115,28 @@ pytest
 ruff check . && ruff format --check .
 ```
 
-Every push runs the same checks on GitHub Actions (`.github/workflows/ci.yml`). The CI also starts the app and calls the API, then builds the Docker image and runs it read-only, as a non-root user, with 512 MB of memory and 1 CPU, until the Docker health check reports it healthy. Optional settings are listed in `.env.example`, and `CONTRIBUTING.md` gives the conventions.
+Every push runs the same checks on GitHub Actions (`.github/workflows/ci.yml`). The CI also starts the app and calls every endpoint. It checks the deployment files (`shellcheck`, `docker compose config`, and `nginx -t` on the filled Nginx template), builds the image, and runs it the way the server does: read-only, non-root, low priority. It then checks that every view is ready on the first call, that regeneration is refused, and that memory stays under 200 MiB. Optional settings are listed in `.env.example`, and `CONTRIBUTING.md` gives the conventions.
 
 ## Deploy
+
+### Showcase mode (what the Docker image runs)
+
+The image is built for small shared servers. During `docker build`, `python -m app.snapshot` generates the default dataset and computes **every view once**: alerts, exploration, provider analysis, threshold sweeps, Isolation Forest and noise curve. This takes about 20 s and 300 MB of RAM, at build time only. The container then loads that snapshot and serves it read-only:
+
+- every page answers in a few milliseconds, with no "computing" state;
+- about 110 MB of RAM, and scikit-learn is never loaded at run time;
+- regeneration is turned off (`POST /api/regenerate` returns 403). Every visitor sees the same stable demo, and the interface says that regeneration works locally.
+
+`GET /health` reports `"mode": "vitrine"` (showcase) or `"live"`.
+
+### Self-hosted: Docker Compose behind Nginx and Cloudflare
+
+`docker-compose.yml` runs the demo as its own compose project with its own network, published on `127.0.0.1:8020` only. It has no memory or CPU cap, so visitors are never throttled. Instead it gets a low priority: under memory pressure the kernel stops it first (`oom_score_adj`), and it yields CPU to other services (`cpu_shares`). The file system is read-only, capabilities are dropped and logs are bounded.
+
+1. **Server, once:** clone the repository, then run `./deploy/deploy.sh`. The script pulls, builds while the current container keeps serving, restarts, waits for the health check and prunes old images. It refuses to run during a freeze window (default `2026-12-07:2026-12-11`, set with `DEMO_FREEZE`; override with `FORCE=1`).
+2. **Server, once:** fill `deploy/nginx-site.conf.template` (domain, Cloudflare origin certificate and key), save it under `/etc/nginx/sites-available/`, link it into `sites-enabled`, then run `sudo nginx -t && sudo systemctl reload nginx`.
+3. **DNS:** add a proxied record (orange cloud) for the domain, pointing to the server. Cloudflare's SSL mode must be *Full* or *Full (strict)*.
+4. **Updates:** `./deploy/deploy.sh`.
 
 ### Hugging Face Spaces (Docker)
 
@@ -132,7 +153,7 @@ Every push runs the same checks on GitHub Actions (`.github/workflows/ci.yml`). 
 3. Render sets `PORT` itself and the container listens on it. No environment variable is needed.
 4. Wait for the first deploy. The app is at `https://<service-name>.onrender.com`. Free instances sleep when idle, so the first visit after a pause takes a little longer.
 
-Optional environment variables change the dataset built at startup: `DEMO_SEED`, `DEMO_SIZE` and `DEMO_NOISE`.
+In live mode, optional environment variables change the dataset built at startup: `DEMO_SEED`, `DEMO_SIZE` and `DEMO_NOISE`. Hugging Face and Render build the same image, so they also run the showcase mode.
 
 ## Exploration view
 
@@ -213,7 +234,7 @@ The project is being extended in stages, each one tested before the next:
 2. ~~"Exploration des données" view: distributions, seasonality, concentration and fraud-versus-legitimate charts~~ (done)
 3. ~~Deeper evaluation: precision-recall curves per threshold, confusion matrices, gain curve for the handler's queue~~ (done)
 4. ~~Provider heatmaps, a member–provider network graph, and an unsupervised model shown *only as a comparison* with the rules~~ (done)
-5. Self-hosted deployment behind Nginx, isolated from other services on the same server
+5. ~~Self-hosted deployment behind Nginx, isolated from other services on the same server, in showcase mode~~ (done)
 
 ## Limits (please read)
 

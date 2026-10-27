@@ -1,0 +1,43 @@
+# Server deployment of the showcase demo, isolated from the other services of the host.
+#
+# - Its own compose project and network: `docker compose` commands here never touch
+#   other projects, and the container cannot reach their containers.
+# - Published on the loopback only; the host's Nginx proxies the public domain to it.
+# - No memory or CPU cap, so visitors are never throttled. Instead, a low priority:
+#   under memory pressure the kernel stops this container first (oom_score_adj), and
+#   it yields CPU to other services when both are busy (cpu_shares). Docker restarts it.
+# - Read-only file system, no Linux capabilities, bounded logs.
+#
+# Start or update: ./deploy/deploy.sh   (or: docker compose up -d --build)
+name: mutuelle-exemple-fraude
+
+services:
+  demo:
+    build: .
+    image: mutuelle-exemple-fraude:latest
+    container_name: mutuelle-exemple-fraude
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DEMO_HOST_PORT:-8020}:7860"
+    environment:
+      PORT: "7860"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    oom_score_adj: 800
+    cpu_shares: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - demo
+
+networks:
+  demo:
+    name: mutuelle-exemple-fraude-net

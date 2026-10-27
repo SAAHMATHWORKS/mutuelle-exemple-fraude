@@ -1,8 +1,13 @@
 """In-memory application state: the current dataset, its alerts, and the
-noise curve (performance at several noise levels), computed in background."""
+noise curve (performance at several noise levels), computed in background.
+
+In showcase mode (``DEMO_SNAPSHOT`` points to a file built by ``app.snapshot``)
+everything is loaded precomputed at startup and regeneration is turned off.
+"""
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -21,6 +26,9 @@ DEFAULT_NOISE = 0.2
 START_SEED = int(os.environ.get("DEMO_SEED", DEFAULT_SEED))
 START_SIZE = int(os.environ.get("DEMO_SIZE", DEFAULT_SIZE))
 START_NOISE = float(os.environ.get("DEMO_NOISE", DEFAULT_NOISE))
+SNAPSHOT_PATH = os.environ.get("DEMO_SNAPSHOT", "").strip()
+
+log = logging.getLogger("app.state")
 
 
 class AppState:
@@ -30,6 +38,19 @@ class AppState:
         self.result: Result | None = None
         self._curves: dict[tuple[int, int], dict] = {}
         self._curve_running: set[tuple[int, int]] = set()
+        self.read_only = False  # True in showcase mode: no regeneration, nothing computed at run time
+        self.mode = "live"
+
+    def use_snapshot(self, path: str) -> None:
+        """Serve a precomputed snapshot (built by ``python -m app.snapshot``) instead of computing."""
+        from app.snapshot import load as load_snapshot
+
+        payload = load_snapshot(path)
+        with self._lock:
+            self.result = payload["result"]
+            self._curves[payload["curve_key"]] = payload["curve"]
+        self.read_only = True
+        self.mode = "vitrine"
 
     # ----------------------------------------------------------- dataset
     def load(self, seed: int = START_SEED, size: int = START_SIZE, noise_level: float = START_NOISE) -> Result:
@@ -145,3 +166,10 @@ class RateLimiter:
 
 state = AppState()
 limiter = RateLimiter()
+
+if SNAPSHOT_PATH:
+    try:
+        state.use_snapshot(SNAPSHOT_PATH)
+        log.info("showcase mode: snapshot loaded from %s", SNAPSHOT_PATH)
+    except Exception as exc:  # the site must still answer: fall back to computing live
+        log.error("snapshot %s unusable (%s); falling back to live mode", SNAPSHOT_PATH, exc)
